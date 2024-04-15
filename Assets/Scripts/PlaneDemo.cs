@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.UIElements;
 
 public class PlaneDemo : MonoBehaviour
 {
@@ -10,7 +11,7 @@ public class PlaneDemo : MonoBehaviour
     public GameObject objToExtract;
     public const int maxIterations = 1000;
     public const int numOfPlanes = 4;
-    public const float distanceThreshold = 0.0000001f;
+    public const float distanceThreshold = 0.05f;
 
     // Start is called before the first frame update
     void Start()
@@ -22,6 +23,7 @@ public class PlaneDemo : MonoBehaviour
         }
 
         Mesh mesh = objToExtract.GetComponent<MeshFilter>().sharedMesh;
+        DisplayMesh(mesh, transform);
         List<Vector3> vertices = new List<Vector3>(mesh.vertices);
 
         List<int> inliers = new List<int>();
@@ -52,7 +54,7 @@ public class PlaneDemo : MonoBehaviour
                 for (var k = 0; k < vertices.Count; k++)
                 {
                     Vector3 vertex = vertices[k];
-                    if (plane.GetDistanceToPoint(vertex) < distanceThreshold)
+                    if (Math.Abs(plane.GetDistanceToPoint(vertex)) < distanceThreshold)
                     {
                         inliers.Add(k);
                     }
@@ -76,7 +78,7 @@ public class PlaneDemo : MonoBehaviour
             Debug.Log("Plane found with " + maxNumInliers + " inliers and " + minOutliers + "outliers.");
             Debug.Log("Plane distance: " + bestPlane.distance + "; Plane normal: " + bestPlane.normal);
 
-            DisplayPlane(bestPlane.flipped);
+            DisplayPlane(bestPlane.flipped, transform);
 
             foreach (int index in maxInliers.OrderByDescending(v => v))
             {
@@ -85,22 +87,35 @@ public class PlaneDemo : MonoBehaviour
         }
     }
 
-    void DisplayPlane(Plane plane)
+    void DisplayPlane(Plane plane, Transform parentTransform)
     {
         GameObject planeObject = GameObject.CreatePrimitive(PrimitiveType.Plane);
-        planeObject.transform.position = plane.ClosestPointOnPlane(Vector3.zero);
-        planeObject.transform.rotation = Quaternion.FromToRotation(Vector3.up, plane.normal);
-
-        // Adjust the scale of the plane to fit the mesh size
-        Bounds meshBounds = objToExtract.GetComponent<MeshRenderer>().bounds;
-        float scaleX = meshBounds.size.x;
-        float scaleZ = meshBounds.size.z;
-        planeObject.transform.localScale = new Vector3(scaleX, 1f, scaleZ);
+        planeObject.transform.position = plane.ClosestPointOnPlane(Vector3.zero) + parentTransform.position;
+        planeObject.transform.rotation = Quaternion.FromToRotation(Vector3.up, plane.normal) * parentTransform.rotation;
+        planeObject.transform.localScale = new Vector3(1.0f, 1.0f, 1.0f);
 
         // Apply transparent material
         Renderer renderer = planeObject.GetComponent<Renderer>();
         Material material = new Material(Shader.Find("Standard"));
         material.color = new Color(1f, 0f, 0f, 0.75f); // Adjust alpha for transparency
+        material.doubleSidedGI = true; // Enable double-sided rendering
+        renderer.material = material;
+    }
+
+    void DisplayMesh(Mesh mesh, Transform parentTransform)
+    {
+        GameObject meshObj = new GameObject("Mesh");
+        //Add Components
+        MeshFilter filter = meshObj.AddComponent<MeshFilter>();
+        MeshRenderer renderer = meshObj.AddComponent<MeshRenderer>();
+        meshObj.transform.position = parentTransform.position;
+        meshObj.transform.rotation = parentTransform.rotation;
+        meshObj.transform.localScale = parentTransform.localScale;
+        filter.mesh = mesh;
+
+        // Apply transparent material
+        Material material = new Material(Shader.Find("Standard"));
+        material.color = new Color(0f, 0f, 1f, 0.75f); // Adjust alpha for transparency
         material.doubleSidedGI = true; // Enable double-sided rendering
         renderer.material = material;
     }
