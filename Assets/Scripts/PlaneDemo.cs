@@ -9,13 +9,14 @@ public class PlaneDemo : MonoBehaviour
 {
 
     public GameObject objToExtract;
-    public const int maxIterationsRANSAC = 500;
+    public const int maxIterationsRANSAC = 750;
     public const int maxIterationsFit = 100;
     public const float thresholdFit = 0.01f;
     public const float rotationStepSize = 0.1f;
-    public const float positionStepSize = 0.1f;
+    public const float positionStepSize = 0.2f;
     public const int numOfPlanes = 4;
     public const float distanceThreshold = 0.05f;
+    public const float groundDelta = 0.01f;
     public const float VERT_THRESHOLD = 0.1f;
 
     private GameObject floor, wall1, wall2;
@@ -32,7 +33,7 @@ public class PlaneDemo : MonoBehaviour
 
         OVRSceneManager sceneManager = FindObjectOfType<OVRSceneManager>();
         Mesh mesh = objToExtract.GetComponent<MeshFilter>().sharedMesh;
-        DisplayMesh(mesh, objToExtract.transform);
+        // DisplayMesh(mesh, objToExtract.transform);
         List<Vector3> vertices = new List<Vector3>(mesh.vertices);
         List<Plane> planes = new List<Plane>();
         List<GameObject> planeObjects = new List<GameObject>();
@@ -127,7 +128,13 @@ public class PlaneDemo : MonoBehaviour
             {
                 wall1 = crtPlaneObj;
             }
-            if (Math.Abs(crtPlaneObj.transform.position.z) > Math.Abs(wall2.transform.position.z) && distFromVertical > VERT_THRESHOLD)
+        }
+        for (int i = 0; i < planes.Count; i++) {
+            GameObject crtPlaneObj = planeObjects[i];
+            Plane crtPlane = planes[i];
+            Vector3 normal = crtPlane.normal;
+            float distFromVertical = 1 - Math.Abs(normal.y);
+            if (crtPlaneObj != wall1 && Math.Abs(crtPlaneObj.transform.position.z) > Math.Abs(wall2.transform.position.z) && distFromVertical > VERT_THRESHOLD)
             {
                 wall2 = crtPlaneObj;
             }
@@ -148,8 +155,10 @@ public class PlaneDemo : MonoBehaviour
     {
         Vector3 newPosition = floor.transform.position;
         Vector3 newRotation = floor.transform.rotation.eulerAngles;
+        Vector3 prevPosition = floor.transform.position;
+        Vector3 prevRotation = floor.transform.rotation.eulerAngles;
         OVRSceneAnchor[] sceneAnchors = FindObjectsOfType<OVRSceneAnchor>();
-        List<Mesh> walls = new List<Mesh>();
+        List<GameObject> walls = new List<GameObject>();
         if (sceneAnchors != null) 
         {
             for (int i = 0; i < sceneAnchors.Length; i++)
@@ -160,63 +169,56 @@ public class PlaneDemo : MonoBehaviour
                 {
                     if (classification.Contains(OVRSceneManager.Classification.Floor))
                     {
-                        Debug.Log("Found a floor");
-                        floorHeight = instance.transform.position.y;
+                        floorHeight = instance.transform.position.y - groundDelta;
                         newPosition.y = floorHeight;
                     }
                     if (classification.Contains(OVRSceneManager.Classification.WallFace))
                     {
-                        Debug.Log("Found a wall");
-                        Mesh mesh = instance.gameObject.GetComponent<MeshFilter>().sharedMesh;
+                        GameObject mesh = instance.gameObject;
                         walls.Add(mesh);
                     }
                 }
             }
-            float bestMetric = float.MaxValue;
-            Vector3 bestPosition = newPosition;
-            Vector3 bestRotation = newRotation;
-            for (int iteration = 0; iteration < maxIterationsFit; iteration++)
+            // Evaluate metric
+            float prevMetric = ComputeMetric(walls, prevPosition, prevRotation);
+            Debug.Log("Prev metric: " + prevMetric);
+
+            // Update parameters using gradient descent
+            float metricForward = ComputeMetric(walls, prevPosition, prevRotation + rotationStepSize * Vector3.up);
+            float metricBackward = ComputeMetric(walls, prevPosition, prevRotation - rotationStepSize * Vector3.up);
+            float gradient = (metricForward - metricBackward) / (2 * rotationStepSize);
+            newRotation = prevRotation - (gradient * rotationStepSize) * Vector3.up;
+
+            Vector3[] directions = { Vector3.forward, Vector3.right };
+            foreach (Vector3 direction in directions)
             {
-                // Evaluate metric
-                float metric = ComputeMetric(walls, newPosition, newRotation);
-                if (metric < thresholdFit) break;
-                if (metric < bestMetric)
-                {
-                    bestMetric = metric;
-                    bestPosition = newPosition;
-                    bestRotation = newRotation;
-                }
-
-                // Update parameters using gradient descent
-                float metricForward = ComputeMetric(walls, newPosition, newRotation + Vector3.up * rotationStepSize);
-                float metricBackward = ComputeMetric(walls, newPosition, newRotation - Vector3.up * rotationStepSize);
-                float gradient = (metricForward - metricBackward) / (2 * rotationStepSize);
-                newRotation -= Vector3.up * (gradient * rotationStepSize);
-
-                Vector3[] directions = { Vector3.forward, Vector3.right };
-                foreach (Vector3 direction in directions)
-                {
-                    float metricForwardPos = ComputeMetric(walls, newPosition + direction * positionStepSize, newRotation);
-                    float metricBackwardPos = ComputeMetric(walls, newPosition - direction * positionStepSize, newRotation);
-                    float gradientPos = (metricForwardPos - metricBackwardPos) / (2 * positionStepSize);
-                    newPosition -= gradientPos * positionStepSize * direction;
-                }
+                float metricForwardPos = ComputeMetric(walls, prevPosition + positionStepSize * direction, newRotation);
+                float metricBackwardPos = ComputeMetric(walls, prevPosition - positionStepSize * direction, newRotation);
+                float gradientPos = (metricForwardPos - metricBackwardPos) / (2 * positionStepSize);
+                newPosition = prevPosition - (gradientPos * positionStepSize) * direction;
             }
 
+            float metric = ComputeMetric(walls, newPosition, newRotation);
+            if (metric < prevMetric)
+            {
+                floor.transform.position = newPosition;
+                floor.transform.rotation = Quaternion.Euler(newRotation);
+            } else {
+                floor.transform.position = prevPosition;
+                floor.transform.rotation = Quaternion.Euler(prevRotation);
+            }
         }
-        floor.transform.position = newPosition;
-        floor.transform.rotation = Quaternion.Euler(newRotation);
     }
 
-    float ComputeMetric(List<Mesh> walls, Vector3 position, Vector3 rotation)
+    float ComputeMetric(List<GameObject> walls, Vector3 position, Vector3 rotation)
     {   
         floor.transform.position = position;
         floor.transform.rotation = Quaternion.Euler(rotation);
         float minWall1Dist = float.MaxValue, minWall2Dist = float.MaxValue;
-        foreach (Mesh wall in walls)
+        foreach (GameObject wall in walls)
             {
-                float wall1Distance = MeshDistanceFromPlane(wall, wall1);
-                float wall2Distance = MeshDistanceFromPlane(wall, wall2);
+                float wall1Distance = MeshDistanceFromPlane(wall1, wall);
+                float wall2Distance = MeshDistanceFromPlane(wall2, wall);
                 if (wall1Distance < minWall1Dist)
                 {
                     minWall1Dist = wall1Distance;
@@ -230,21 +232,24 @@ public class PlaneDemo : MonoBehaviour
         return minWall1Dist + minWall2Dist;
     }
 
-    float MeshDistanceFromPlane(Mesh mesh, GameObject planeObj)
+    float MeshDistanceFromPlane(GameObject meshObj, GameObject planeObj)
     {
+        Mesh mesh = meshObj.GetComponent<MeshFilter>().sharedMesh;
+        Transform meshTransform = meshObj.transform;
         MeshFilter filter = planeObj.GetComponent<MeshFilter>();
         Vector3 normal = Vector3.up;
         if(filter && filter.mesh.normals.Length > 0)
             normal = filter.transform.TransformDirection(filter.mesh.normals[0]);
         Plane plane = new Plane(normal, planeObj.transform.position);
 
-        float distanceSum = 0;
+        List<float> distances = new List<float>();
         for (int i = 0; i < mesh.vertices.Length; i++) {
-            Vector3 vertex = mesh.vertices[i];
+            Vector3 vertex = meshTransform.TransformPoint(mesh.vertices[i]);
             float distance = plane.GetDistanceToPoint(vertex);
-            distanceSum += distance * distance;
+            distances.Add(Math.Abs(distance));
         }
-        return distanceSum / mesh.vertices.Length;
+        distances = distances.OrderByDescending(v => v).ToList();
+        return distances[0] + distances[1] + distances[3];
     }
 
     Vector3 ProjectPointOnPlane(Vector3 point, Plane plane)
