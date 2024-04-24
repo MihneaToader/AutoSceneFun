@@ -12,6 +12,13 @@
 
 # For privacy purposes, keep room scans in Polybox
 /Assets/Scans/
+Assets
+
+# BodyPose
+bodyPose/data/*
+bodyPose/.*
+bodyPose/models/*.task
+
 
 # MemoryCaptures can get excessive in size.
 # They also could contain extremely sensitive data
