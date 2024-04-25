@@ -51,16 +51,33 @@ done
 # Create virtual environment (if not already created)
 if [ ! -d ".3dv" ]; then
     echo "Creating virtual environment..."
-    python -m venv .3dv
+    python3 -m venv .3dv
+    if [ $? -ne 0 ]; then
+        echo "Failed to create virtual environment. Exiting."
+        echo "Tip: Make sure python is available, i.e. activate conda base environment"
+        exit 1
+    fi
+else
+    echo "Virtual environment already exists."
 fi
 
 # Activate the virtual environment
 echo "Activating virtual environment..."
 source .3dv/bin/activate
+if [ $? -ne 0 ]; then
+    echo "Failed to activate virtual environment. Exiting."
+    exit 1
+fi
 
 # Install dependencies from requirements.txt
 echo "Installing Python dependencies..."
+pip install --upgrade pip
+# python -m pip install mediapipe
 pip install -r requirements.txt
+if [ $? -ne 0 ]; then
+    echo "Failed to install dependencies. Exiting."
+    exit 1
+fi
 
 # Create models folder if it doesn't exist
 mkdir -p models
@@ -88,4 +105,4 @@ fi
 
 echo "Download completed."
 
-echo "Setup completed."
+echo "Setup completed. Use 'source .3dv/bin/activate' to activate virtual environment."

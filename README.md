@@ -34,6 +34,8 @@ Example:
 bash setup.sh --model lite
 ```
 
+Use ```source .3dv/bin/activate``` to activate the created virtual environment.
+
 ### Data
 Put your data into `data` folder. For images, `.jpg` is the supported format. For videos, both `.mp4` and `.mov` are supported. No need for dividing folders.
 
