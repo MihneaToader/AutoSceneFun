@@ -15,3 +15,10 @@ For the sake of privacy, room scans are not included in this repository. Access 
 
 ## Building and running
 If you've done everything right, you should be able to open the Unity project, wait for Unity Hub to download all the necessary packages, go to File > Build Settings, set the build target to the Oculus 3 device and hit Build and Run. 
+
+## :dancers: Body-Pose Estimation
+<details>
+
+### Setup
+
+</details>
