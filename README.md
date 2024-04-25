@@ -16,9 +16,44 @@ For the sake of privacy, room scans are not included in this repository. Access 
 ## Building and running
 If you've done everything right, you should be able to open the Unity project, wait for Unity Hub to download all the necessary packages, go to File > Build Settings, set the build target to the Oculus 3 device and hit Build and Run. 
 
-## :dancers: Body-Pose Estimation
+## :runner: Body-Pose Estimation
 <details>
 
 ### Setup
+
+***Disclaimer***: Streaming is not supported
+
+Run the setup-file to setup the environment with the necessary dependencies and download models.
+
+```
+bash setup.sh
+```
+Add the ```--model``` flagg if only a specific model is needed (lite, full or heavy)
+Example:
+```
+bash setup.sh --model lite
+```
+
+### Data
+Put your data into `data` folder. For images, `.jpg` is the supported format. For videos, both `.mp4` and `.mov` are supported. No need for dividing folders.
+
+### Body_pose.py
+
+Default runs video-processing and saves results in the `output` folder (will be created if not present)
+
+* `--mode`: Generate pose from [Image, Video, Stream] (by default: Video)
+* `--model`: Path to model (by default: models/pose_landmarker_lite.task)
+* `--data`: Path to image or video data folder (by default: data) (will process only single file, if path to single file is given)
+* `--visualise`: Output visualisation of joints to output folder
+* `--output`: Path to output folder (by default: output). Folder will be created if does not exist
+* `--set_fps`: Set output fps for data.
+
+The output is sorted by timestamps. A video of `fps` will only be evaluated at `--set_fps`, i.e. a 60 fps video will only generate `--set_fps` datapoints per second.
+
+### Output formats
+
+* ***Images***: .jpg
+* ***Videos***: .mov
+* ***Landmarks***: .json
 
 </details>
