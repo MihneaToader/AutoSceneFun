@@ -4,6 +4,7 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 import datetime
 import json
+from PIL import Image
 
 # Visualisation
 from mediapipe import solutions
@@ -22,21 +23,36 @@ def draw_landmarks_on_image(rgb_image, detection_result):
     pose_landmarks_list = detection_result.pose_landmarks
     annotated_image = np.copy(rgb_image)
 
+    # Get landmarks in world coords (debuggin)
+    pose_world_landmarks_list = detection_result.pose_world_landmarks
+
     # Loop through the detected poses to visualize.
-    for pose_landmarks in pose_landmarks_list:
+    for pose_landmarks, pose_world_landmarks in zip(pose_landmarks_list, pose_world_landmarks_list):
         pose_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
-        pose_landmarks_proto.landmark.extend([
+        
+        norm_landmarks = [
             landmark_pb2.NormalizedLandmark(x=landmark.x, y=landmark.y, z=landmark.z) for landmark in pose_landmarks
-        ])
+        ]
+        pose_landmarks_proto.landmark.extend(norm_landmarks)
         solutions.drawing_utils.draw_landmarks(
             annotated_image,
             pose_landmarks_proto,
             solutions.pose.POSE_CONNECTIONS,
             solutions.drawing_styles.get_default_pose_landmarks_style())
+
+        world_landmarks = [
+            landmark_pb2.Landmark(x=landmark.x, y=landmark.y, z=landmark.z) for landmark in pose_world_landmarks
+        ]
+
+        # Add position text near each landmark.
+        for landmark, world_landmark in zip(norm_landmarks, world_landmarks):
+            x, y = int(landmark.x * annotated_image.shape[1]), int(landmark.y * annotated_image.shape[0])
+            cv2.putText(annotated_image, f'({world_landmark.x:.2f}, {world_landmark.y:.2f}, {world_landmark.z:.2f})', (x, y -20), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2) # 1.0 is font size, 2 is thickness
         
     return annotated_image
 
-def get_body_pose_from_image(model_path, image, output_path, visualise=False):
+def get_body_pose_from_image(model_path, image, creation_time, output_path, visualise=False):
     # Load model
     BaseOptions = python.BaseOptions
     PoseLandmarker = vision.PoseLandmarker
@@ -53,6 +69,20 @@ def get_body_pose_from_image(model_path, image, output_path, visualise=False):
         # Process image
         results = landmarker.detect(image)
 
+        # Save results to json file
+        # World joint positions
+        if results.pose_world_landmarks:
+            landmarks_dict = {str(creation_time):{'Landmark':{i: {'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for i, lm in enumerate(results.pose_world_landmarks[0])}}}
+            with open(output_path[:-4] + ".json", 'w') as f:
+                json.dump(landmarks_dict, f, indent=4)
+
+        # Relative joint positions
+        # if results.pose_landmarks:
+        #     landmarks_dict = {'NormalizedLandmark':{i: {'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for i, lm in enumerate(results.pose_landmarks[0])}}
+        #     with open(output_path[:-4] + ".json", 'w') as f:
+        #         json.dump(landmarks_dict, f, indent=4)
+        
+
         if visualise:
             # Get rid of alpha (transparency) channel
             bgr_image = image.numpy_view()[:, :, :3]
@@ -64,6 +94,7 @@ def get_body_pose_from_image(model_path, image, output_path, visualise=False):
             
             # Save image
             cv2.imwrite(output_path, bgr_image)
+
 
 def get_body_pose_from_video(model_path, video, output_path, starting_time, target_fps, visualise=False):
 
@@ -134,8 +165,11 @@ def get_body_pose_from_video(model_path, video, output_path, starting_time, targ
                     global_timestamp = starting_time + datetime.timedelta(milliseconds=timestamp_ms)
                     global_timestamp = global_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
 
-                    if results.pose_landmarks: # world coord are found under results.pose_world_landmarks
-                        landmarks_dict = {'NormalizedLandmark':{i: {'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for i, lm in enumerate(results.pose_landmarks[0])}}
+                    # if results.pose_landmarks: # world coord are found under results.pose_world_landmarks
+                    #     landmarks_dict = {'NormalizedLandmark':{i: {'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for i, lm in enumerate(results.pose_landmarks[0])}}
+                    #     pose_data[global_timestamp] = landmarks_dict
+                    if results.pose_world_landmarks: # world coord are found under results.pose_world_landmarks
+                        landmarks_dict = {'Landmark':{i: {'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for i, lm in enumerate(results.pose_world_landmarks[0])}}
                         pose_data[global_timestamp] = landmarks_dict
 
 
@@ -164,20 +198,36 @@ def get_body_pose_from_video(model_path, video, output_path, starting_time, targ
         print("Saving video and landmarks to: ", landmarks_file_path[:-4])
 
 
-def get_video_creation_date(video_path):
+def get_data_creation_date(data_path):
     """Get creation time of video from metadata"""
 
-    media_info = MediaInfo.parse(video_path)
-    for track in media_info.tracks:
-        if track.track_type == "Video":
-            creation_time_str = track.encoded_date
-            # Parse the creation time string into a datetime object
-            creation_time = datetime.datetime.strptime(creation_time_str.replace(' UTC', ''), "%Y-%m-%d %H:%M:%S")
-            return creation_time
+    # Account for videos
+    if data_path.lower().endswith(('.mp4', '.mov')):
+        media_info = MediaInfo.parse(data_path)
+        for track in media_info.tracks:
+            if track.track_type == "Video":
+                creation_time_str = track.encoded_date
+                # Parse the creation time string into a datetime object
+                creation_time = datetime.datetime.strptime(creation_time_str.replace(' UTC', ''), "%Y-%m-%d %H:%M:%S")
+                return creation_time
     
-    print("Warning: Creation time not found in video metadata or does not match expected format.")
-    return None
+        print(f"Warning: Creation time not found in video metadata or does not match expected format.")
+        return None
+    
+    # Get image creation date
+    elif data_path.lower().endswith(('.jpg')):
+        with Image.open(data_path) as img:
+            exif_data = img._getexif()
+            if exif_data:
+                datetime_org = exif_data.get(36867) # DateTimeOriginal tag
+                if datetime_org:
+                    creation_time = datetime.datetime.strptime(datetime_org, "%Y:%m:%d %H:%M:%S")
+                    print(creation_time)
+                    return creation_time
 
+    else:
+        print("Warning: Unsupported media type.")
+        return None
 
 def process_data(args):
     """Process data based on mode"""
@@ -188,9 +238,11 @@ def process_data(args):
         if os.path.isdir(args.data):
             images = [i for i in os.listdir(args.data) if i.endswith(".jpg")]
             for image in images:
-                i = mp.Image.create_from_file(os.path.join(args.data, image))
+                image_path = os.path.join(args.data, image)
+                i = mp.Image.create_from_file(image_path)
                 output_path = os.path.join(args.output, image)
-                get_body_pose_from_image(model_path=args.model, image=i, visualise=args.visualise, output_path=output_path)
+                creation_time = get_data_creation_date(image_path)
+                get_body_pose_from_image(model_path=args.model, image=i, creation_time=creation_time, visualise=args.visualise, output_path=output_path)
         
         # If only single image is given
         elif os.path.isfile(args.data):
@@ -199,7 +251,8 @@ def process_data(args):
             # Get image name
             image_name = args.data.split("/")[-1]
             output_path = os.path.join(args.output, image_name)
-            get_body_pose_from_image(model_path=args.model, image=i, visualise=args.visualise, output_path=args.output)
+            creation_time = get_data_creation_date(args.data)
+            get_body_pose_from_image(model_path=args.model, image=i, creation_time=creation_time, visualise=args.visualise, output_path=args.output)
         
         else:
             raise ValueError("Invalid path provided for video data")
@@ -218,7 +271,7 @@ def process_data(args):
                 if not v.isOpened():
                     raise IOError("Cannot open video: " + os.path.join(args.data, video))
                 
-                creation_time = get_video_creation_date(video_path)
+                creation_time = get_data_creation_date(video_path)
                 output_path = os.path.join(args.output, str(creation_time) + video[-4:])
                 get_body_pose_from_video(model_path=args.model, video=v, visualise=args.visualise, output_path=output_path, starting_time=creation_time, target_fps=args.set_fps)
         # Process single video
@@ -230,7 +283,7 @@ def process_data(args):
                 raise IOError("Cannot open video: " + args.data)
             
             video_format = args.data.split("/")[-1][-4:]
-            creation_time = get_video_creation_date(args.data)
+            creation_time = get_data_creation_date(args.data)
             output_path = os.path.join(args.output, str(creation_time) + video_format)
             get_body_pose_from_video(model_path=args.model, video=v, visualise=args.visualise, output_path=output_path, starting_time=creation_time, target_fps=args.set_fps)
         
@@ -263,6 +316,3 @@ def main():
     
 if __name__ == "__main__":
     main()
-
-
-# TODO: add fps cap to synchronise fps with MetaQuest
