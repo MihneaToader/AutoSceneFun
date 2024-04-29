@@ -12,7 +12,7 @@ public class PlaneDemo : MonoBehaviour
     public const int maxIterationsRANSAC = 750;
     public const int maxIterationsFit = 100;
     public const float thresholdFit = 0.01f;
-    public const float rotationStepSize = 0.1f;
+    public const float rotationStepSize = 1f;
     public const float positionStepSize = 0.2f;
     public const int numOfPlanes = 4;
     public const float distanceThreshold = 0.05f;
