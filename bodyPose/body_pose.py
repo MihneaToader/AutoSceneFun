@@ -19,6 +19,8 @@ from tqdm import tqdm
 import argparse
 import os
 
+DEBUGG = False
+
 def draw_landmarks_on_image(rgb_image, detection_result):
     pose_landmarks_list = detection_result.pose_landmarks
     annotated_image = np.copy(rgb_image)
@@ -29,7 +31,6 @@ def draw_landmarks_on_image(rgb_image, detection_result):
     # Loop through the detected poses to visualize.
     for pose_landmarks, pose_world_landmarks in zip(pose_landmarks_list, pose_world_landmarks_list):
         pose_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
-        
         norm_landmarks = [
             landmark_pb2.NormalizedLandmark(x=landmark.x, y=landmark.y, z=landmark.z) for landmark in pose_landmarks
         ]
@@ -82,6 +83,12 @@ def get_body_pose_from_image(model_path, image, creation_time, output_path, visu
         #     with open(output_path[:-4] + ".json", 'w') as f:
         #         json.dump(landmarks_dict, f, indent=4)
         
+        if DEBUGG:
+                print(f'Saving landmarks to {output_path[:-4] + "_landmarks.json"}')
+                results_dict = {"pose_landmarks": [{'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for lm in results.pose_landmarks[0]], 
+                                "pose_world_landmarks": [{'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for lm in results.pose_world_landmarks[0]]}
+                with open(output_path[:-4] + "_landmarks.json", 'w') as file:
+                    json.dump(results_dict, file, indent=4)
 
         if visualise:
             # Get rid of alpha (transparency) channel
@@ -311,6 +318,14 @@ def main():
     # Check if output folder exists, else create it
     if not os.path.exists(args.output):
         os.makedirs(args.output)
+
+        # Create media folder
+        os.makedirs(os.path.join(args.output, "media"))
+
+        if DEBUGG:
+            debugg_folder = os.path.join(args.output, "debugg")
+            if not os.path.exists(debugg_folder):
+                os.makedirs(debugg_folder)
     
     process_data(args)
     
