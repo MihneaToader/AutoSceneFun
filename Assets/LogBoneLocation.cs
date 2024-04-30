@@ -1,78 +1,126 @@
-using System;
-using System.IO;
 using UnityEngine;
+using System.IO;
+using System.Text;
+using Newtonsoft.Json;
+using System.Collections.Generic;
 
-public enum HandInfoFrequency
+public class LogBoneLocation : MonoBehaviour
 {
-    None,
-    Once,
-    Repeat
-}
+    private string filePath;
+    private JsonData data;
+    private float nextUpdateTime = 0f;
+    private float updateInterval = 1f; // Update interval in seconds
+    private List<GameObject> bonePoints = new List<GameObject>();
+    [SerializeField] private float pointSize = 0.01f;
 
-public class HandDebugSkeletonInfo : MonoBehaviour
-{
-    [SerializeField]
-    private OVRHand hand;
-
-    [SerializeField]
-    private OVRSkeleton handSkeleton;
-
-    [SerializeField]
-    private HandInfoFrequency handInfoFrequency = HandInfoFrequency.Once;
-
-    private bool handInfoDisplayed = false;
-
-    private bool pauseDisplay = false;
-
+    [SerializeField] private OVRHand hand;
+    [SerializeField] private OVRSkeleton handSkeleton;
     private void Awake()
     {
-        if(!hand) hand = GetComponent<OVRHand>();
-        if(!handSkeleton) handSkeleton = GetComponent<OVRSkeleton>();
+        if (!hand) hand = GetComponent<OVRHand>();
+        if (!handSkeleton) handSkeleton = GetComponent<OVRSkeleton>();
+    }
+    private void Start()
+    {
+        filePath = $"{Application.persistentDataPath}/{System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")}_hand_data.json";
+        data = new JsonData();
+        LoadData();
+        CreateBonePoints();
     }
 
-    private void Update(){
-#if UNITY_EDITOR
-    if(Input.GetKeyDown(KeyCode.Space)) pauseDisplay = !pauseDisplay;
-#endif
-    if(hand.IsTracked && !pauseDisplay)
+    
+    
+    private void Update()
     {
-        if (handInfoFrequency == HandInfoFrequency.Once && !handInfoDisplayed)
+        hand = GetComponent<OVRHand>();
+        if (Time.time >= nextUpdateTime)
         {
-            DisplayBoneInfo();
-            handInfoDisplayed = true;
+            UpdateData();
+            SaveData();
+            nextUpdateTime = Time.time + updateInterval;
+            UpdateBonePoints();
         }
-        else if (handInfoFrequency == HandInfoFrequency.Repeat)
+    }
+
+    private void LoadData()
+    {
+        if (File.Exists(filePath))
         {
-            DisplayBoneInfo();
+            string json = File.ReadAllText(filePath);
+            data = JsonConvert.DeserializeObject<JsonData>(json);
+        }
+        else
+        {
+            data.Entries = new System.Collections.Generic.List<JsonEntry>();
         }
     }
-}
-private void DisplayBoneInfo()
-{
-    string tmp_text = "";
-    string _path;
-   
-    foreach (var bone in handSkeleton.Bones)
-    {
-        tmp_text += $"{handSkeleton.GetSkeletonType()}: boneId -> {bone.Id} pos -> {bone.Transform.position} rot -> {bone.Transform.rotation}" + "\n";
-        // Debug.Log($"{handSkeleton.GetSkeletonType()}: boneId -> {bone.Id} pos -> {bone.Transform.position}");
-    }
-    tmp_text += $"{handSkeleton.GetSkeletonType()}: num of bones -> {handSkeleton.GetCurrentNumBones()}" + "\n";
-    tmp_text += $"{handSkeleton.GetSkeletonType()}: num of skinnable bones -> {handSkeleton.GetCurrentNumSkinnableBones()}" + "\n";
-    tmp_text += $"{handSkeleton.GetSkeletonType()}: start bone id -> {handSkeleton.GetCurrentStartBoneId()}" + "\n";
-    tmp_text += $"{handSkeleton.GetSkeletonType()}: end bone id -> {handSkeleton.GetCurrentEndBoneId()} "+ "\n";
-    _path = Application.persistentDataPath + "/123.txt";
 
-    if (!File.Exists(_path))
+    private void UpdateData()
     {
-        File.WriteAllText(_path, "My string text");
-        Debug.Log("File created at: " + _path);
-    }
-    else
-    {
-        Debug.Log("File already exists at: " + _path);
+        string timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+        Dictionary<string, Dictionary<string, float>> numbersPerBone = new Dictionary<string, Dictionary<string, float>>();
+        foreach (var bone in handSkeleton.Bones)
+        {
+            Dictionary<string, float> boneData = new Dictionary<string, float>();
+            boneData["PositionX"] = bone.Transform.position.x;
+            boneData["PositionY"] = bone.Transform.position.y;
+            boneData["PositionZ"] = bone.Transform.position.z;
+            boneData["RotationX"] = bone.Transform.rotation.x;
+            boneData["RotationY"] = bone.Transform.rotation.y;
+            boneData["RotationZ"] = bone.Transform.rotation.z;
+            boneData["RotationW"] = bone.Transform.rotation.w;
+            numbersPerBone[$"{bone.Id}"] = boneData;
+            
+        }
+        
+        
+
+        data.Entries.Add(new JsonEntry { Timestamp = timestamp, Position_rotation = numbersPerBone });
     }
 
-}
+    private void SaveData()
+    {
+        string json = JsonConvert.SerializeObject(data, Formatting.Indented);
+        File.WriteAllText(filePath, json);
+    }
 
+    private class JsonData
+    {
+        public System.Collections.Generic.List<JsonEntry> Entries { get; set; }
+    }
+
+    private class JsonEntry
+    {
+        public string Timestamp { get; set; }
+        public Dictionary<string, Dictionary<string, float>> Position_rotation { get; set; }
+    }
+
+    private void CreateBonePoints()
+    {
+        foreach (var bone in handSkeleton.Bones)
+        {
+            GameObject bonePoint = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            bonePoint.transform.localScale = Vector3.one * pointSize;
+            bonePoint.name = $"Bone Point ({bone.Id})";
+            bonePoints.Add(bonePoint);
+        }
+    }
+
+    private void UpdateBonePoints()
+    {
+        string boneIds = "";
+        for (int i = 0; i < handSkeleton.Bones.Count; i++)
+        {
+            var bone = handSkeleton.Bones[i];
+            boneIds += $"{bone.Id}, ";
+            var bonePoint = bonePoints[i];
+            bonePoint.transform.position = bone.Transform.position;
+        }
+
+        // Remove the trailing comma and space
+        if (boneIds.Length > 2)
+            boneIds = boneIds.Substring(0, boneIds.Length - 2);
+
+        // Debug.Log($"Bone IDs: {boneIds}");
+    }
 }
