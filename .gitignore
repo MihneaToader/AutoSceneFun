@@ -12,7 +12,7 @@
 
 # For privacy purposes, keep room scans in Polybox
 /Assets/Scans/
-Assets
+
 
 # BodyPose
 bodyPose/data/*
@@ -35,6 +35,7 @@ bodyPose/models/*.task
 
 # Visual Studio cache directory
 .vs/
+.vscode/
 
 # Gradle cache directory
 .gradle/
