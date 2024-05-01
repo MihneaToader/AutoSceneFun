@@ -19,7 +19,7 @@ from tqdm import tqdm
 import argparse
 import os
 
-DEBUGG = False
+from utils import *
 
 def draw_landmarks_on_image(rgb_image, detection_result):
     pose_landmarks_list = detection_result.pose_landmarks
@@ -53,7 +53,7 @@ def draw_landmarks_on_image(rgb_image, detection_result):
         
     return annotated_image
 
-def get_body_pose_from_image(model_path, image, creation_time, output_path, visualise=False):
+def get_body_pose_from_image(model_path, image, creation_time, output_path, image_name, visualise=False):
     # Load model
     BaseOptions = python.BaseOptions
     PoseLandmarker = vision.PoseLandmarker
@@ -74,21 +74,26 @@ def get_body_pose_from_image(model_path, image, creation_time, output_path, visu
         # World joint positions
         if results.pose_world_landmarks:
             landmarks_dict = {str(creation_time):{'Landmark':{i: {'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for i, lm in enumerate(results.pose_world_landmarks[0])}}}
-            with open(output_path[:-4] + ".json", 'w') as f:
+            with open(os.path.join(output_path, "raw", image_name + ".json"), 'w') as f:
                 json.dump(landmarks_dict, f, indent=4)
 
         # Relative joint positions
         # if results.pose_landmarks:
         #     landmarks_dict = {'NormalizedLandmark':{i: {'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for i, lm in enumerate(results.pose_landmarks[0])}}
-        #     with open(output_path[:-4] + ".json", 'w') as f:
+        #     with open(os.path.join(output_path, "raw", image_name + ".json"), 'w') as f:
         #         json.dump(landmarks_dict, f, indent=4)
         
         if DEBUGG:
-                print(f'Saving landmarks to {output_path[:-4] + "_landmarks.json"}')
-                results_dict = {"pose_landmarks": [{'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for lm in results.pose_landmarks[0]], 
-                                "pose_world_landmarks": [{'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for lm in results.pose_world_landmarks[0]]}
-                with open(output_path[:-4] + "_landmarks.json", 'w') as file:
-                    json.dump(results_dict, file, indent=4)
+
+            # Split filename from output path
+            debugg_output_path = os.path.join(output_path, "debugg", "landmarks", image_name + "_landmarks.json")
+
+            results_dict = {"pose_landmarks": [{'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for lm in results.pose_landmarks[0]], 
+                            "pose_world_landmarks": [{'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for lm in results.pose_world_landmarks[0]]}
+
+            print(f'Saving landmarks to {debugg_output_path}')
+            with open(debugg_output_path, 'w') as file:
+                json.dump(results_dict, file, indent=4)
 
         if visualise:
             # Get rid of alpha (transparency) channel
@@ -100,10 +105,10 @@ def get_body_pose_from_image(model_path, image, creation_time, output_path, visu
             bgr_image = cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR)
             
             # Save image
-            cv2.imwrite(output_path, bgr_image)
+            cv2.imwrite(os.path.join(output_path, "media", image_name + "_ann.jpg"), bgr_image)
 
 
-def get_body_pose_from_video(model_path, video, output_path, starting_time, target_fps, visualise=False):
+def get_body_pose_from_video(model_path, video, output_path, video_name, starting_time, target_fps, visualise=False):
 
     # Read metadata from video
     fps = video.get(cv2.CAP_PROP_FPS)
@@ -128,10 +133,11 @@ def get_body_pose_from_video(model_path, video, output_path, starting_time, targ
     # Define the codec and create VideoWriter object
     if visualise:
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # or 'XVID'
-        out = cv2.VideoWriter(os.path.join(output_path), fourcc, fps, (frame_width, frame_height))
+        video_output_path = os.path.join(output_path, "media", video_name + "_ann.mov")
+        out = cv2.VideoWriter(video_output_path, fourcc, fps, (frame_width, frame_height))
     
     # Save joint positions
-    landmarks_file_path = os.path.join(output_path[:-4] + ".json")
+    landmarks_file_path = os.path.join(output_path, "raw", video_name + ".json")
     pose_data = {}
     try:
         # Create PoseLandmarker object
@@ -195,18 +201,21 @@ def get_body_pose_from_video(model_path, video, output_path, starting_time, targ
         progress_bar.close()
         video.release()
         if visualise:
-            print("Saving video to: ", output_path)
+            print("Saving video to: ", video_output_path)
             out.release()
         # cv2.destroyAllWindows()
 
         with open(landmarks_file_path, 'w') as f:
             json.dump(pose_data, f, indent=4)
 
-        print("Saving video and landmarks to: ", landmarks_file_path[:-4])
 
+
+import datetime
+from PIL import Image
+from pymediainfo import MediaInfo
 
 def get_data_creation_date(data_path):
-    """Get creation time of video from metadata"""
+    """Get creation time of video from metadata, including milliseconds if available."""
 
     # Account for videos
     if data_path.lower().endswith(('.mp4', '.mov')):
@@ -214,27 +223,36 @@ def get_data_creation_date(data_path):
         for track in media_info.tracks:
             if track.track_type == "Video":
                 creation_time_str = track.encoded_date
-                # Parse the creation time string into a datetime object
-                creation_time = datetime.datetime.strptime(creation_time_str.replace(' UTC', ''), "%Y-%m-%d %H:%M:%S")
-                return creation_time
-    
-        print(f"Warning: Creation time not found in video metadata or does not match expected format.")
-        return None
-    
+                # Adjust format to possibly include milliseconds
+                formats = ["%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"]  # Added format with %f for milliseconds
+                for fmt in formats:
+                    try:
+                        creation_time = datetime.datetime.strptime(creation_time_str.replace(' UTC', ''), fmt)
+                        return creation_time
+                    except ValueError:
+                        continue
+                print("Warning: Creation time not found in video metadata or does not match expected format.")
+                return None
+
     # Get image creation date
-    elif data_path.lower().endswith(('.jpg')):
+    elif data_path.lower().endswith(('.jpg', '.jpeg')):
         with Image.open(data_path) as img:
             exif_data = img._getexif()
             if exif_data:
-                datetime_org = exif_data.get(36867) # DateTimeOriginal tag
+                datetime_org = exif_data.get(36867)  # DateTimeOriginal tag
                 if datetime_org:
-                    creation_time = datetime.datetime.strptime(datetime_org, "%Y:%m:%d %H:%M:%S")
-                    print(creation_time)
-                    return creation_time
+                    formats = ["%Y:%m:%d %H:%M:%S.%f", "%Y:%m:%d %H:%M:%S"]  # Added format with %f for milliseconds
+                    for fmt in formats: # Try to get milliseconds
+                        try:
+                            creation_time = datetime.datetime.strptime(datetime_org, fmt)
+                            return creation_time
+                        except ValueError:
+                            continue
 
     else:
         print("Warning: Unsupported media type.")
         return None
+
 
 def process_data(args):
     """Process data based on mode"""
@@ -247,19 +265,17 @@ def process_data(args):
             for image in images:
                 image_path = os.path.join(args.data, image)
                 i = mp.Image.create_from_file(image_path)
-                output_path = os.path.join(args.output, image)
                 creation_time = get_data_creation_date(image_path)
-                get_body_pose_from_image(model_path=args.model, image=i, creation_time=creation_time, visualise=args.visualise, output_path=output_path)
+                get_body_pose_from_image(model_path=args.model, image=i, creation_time=creation_time, visualise=args.visualise, output_path=args.output, image_name=image.split(".")[0])
         
         # If only single image is given
         elif os.path.isfile(args.data):
             i = mp.Image.create_from_file(args.data)
             
             # Get image name
-            image_name = args.data.split("/")[-1]
-            output_path = os.path.join(args.output, image_name)
+            image = args.data.split("/")[-1]
             creation_time = get_data_creation_date(args.data)
-            get_body_pose_from_image(model_path=args.model, image=i, creation_time=creation_time, visualise=args.visualise, output_path=args.output)
+            get_body_pose_from_image(model_path=args.model, image=i, creation_time=creation_time, visualise=args.visualise, output_path=args.output, image_name=image.split(".")[0])
         
         else:
             raise ValueError("Invalid path provided for video data")
@@ -279,8 +295,8 @@ def process_data(args):
                     raise IOError("Cannot open video: " + os.path.join(args.data, video))
                 
                 creation_time = get_data_creation_date(video_path)
-                output_path = os.path.join(args.output, str(creation_time) + video[-4:])
-                get_body_pose_from_video(model_path=args.model, video=v, visualise=args.visualise, output_path=output_path, starting_time=creation_time, target_fps=args.set_fps)
+                new_video_name = str(creation_time)
+                get_body_pose_from_video(model_path=args.model, video=v, visualise=args.visualise, output_path=args.output, video_name=new_video_name, starting_time=creation_time, target_fps=args.set_fps)
         # Process single video
         elif os.path.isfile(args.data):
             v = cv2.VideoCapture(args.data)
@@ -289,43 +305,61 @@ def process_data(args):
             if not v.isOpened():
                 raise IOError("Cannot open video: " + args.data)
             
-            video_format = args.data.split("/")[-1][-4:]
             creation_time = get_data_creation_date(args.data)
-            output_path = os.path.join(args.output, str(creation_time) + video_format)
-            get_body_pose_from_video(model_path=args.model, video=v, visualise=args.visualise, output_path=output_path, starting_time=creation_time, target_fps=args.set_fps)
+            new_video_name = str(creation_time)
+            get_body_pose_from_video(model_path=args.model, video=v, visualise=args.visualise, output_path=args.output, video_name=new_video_name, starting_time=creation_time, target_fps=args.set_fps)
         
         else:
             raise ValueError("Invalid path provided for video data")
         
+def create_necessary_folders(output_path):
+    # Function to create folder if it doesn't exist
+    def ensure_folder(path):
+        if not os.path.exists(path):
+            os.makedirs(path)
+
+    # Ensure the base output path exists
+    ensure_folder(output_path)
+
+    # Create subdirectories
+    subdirectories = ["media", "raw"]
+    if DEBUGG:
+        subdirectories.append("debugg")
+        subdirectories.append("debugg/landmarks")
+    
+    for subdir in subdirectories:
+        ensure_folder(os.path.join(output_path, subdir))
+
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-m", "--mode", type=str, default="Video", help="Generate pose from [Image, Video, Stream]")
-    parser.add_argument("--model", type=str, default="models/pose_landmarker_lite.task", help="Path to model")
-    parser.add_argument("-d", "--data", type=str, default="data", help="Path to image, video or stream data folder")
-    parser.add_argument("-v", "--visualise", type=bool, default=False, help="Visualise results")
-    parser.add_argument("-out", "--output", type=str, default="output", help="Path to save output")
-    parser.add_argument("-sf", "--set_fps", type=int, default=0, help="Set fps for video processing")
+    parser.add_argument("-m", "--mode", type=str, default="Video", 
+                        help="Generate pose from [Image, Video, Stream]")
+    parser.add_argument("--model", type=str, default=os.path.join(MODELS_DIR, "pose_landmarker_lite.task"), 
+                        help="Path to model")
+    parser.add_argument("-d", "--data", type=str, default=DATA_DIR, 
+                        help="Path to image, video or stream data folder")
+    parser.add_argument("-v", "--visualise", type=bool, default=False, 
+                        help="Visualise results")
+    parser.add_argument("-out", "--output", type=str, default=os.path.join(OUTPUT_DIR, "body_pose"),
+                        help="Path to save output")
+    parser.add_argument("-sf", "--set_fps", type=int, default=0, 
+                        help="Set fps for video processing, 0 for original fps")
+    parser.add_argument("--debugg", type=bool, default=False, 
+                        help="Debugg mode")
     args = parser.parse_args()
 
     # Raise warning if mode not supported
     if args.mode.lower() not in ["image", "video"]:
         raise ValueError(f"{args.mode} not supported. Video and Stream to be implemented")
     
-    if args.mode.lower() == "image":
-        print("Warning: Output joint positions is not implemented. Only visualisation available.")
+    # if args.mode.lower() == "image":
+    #     print("Warning: Output joint positions is not implemented. Only visualisation available.")
     
-    # Check if output folder exists, else create it
-    if not os.path.exists(args.output):
-        os.makedirs(args.output)
+    global DEBUGG # Make DEBUGG a global variable
+    DEBUGG = args.debugg
 
-        # Create media folder
-        os.makedirs(os.path.join(args.output, "media"))
-
-        if DEBUGG:
-            debugg_folder = os.path.join(args.output, "debugg")
-            if not os.path.exists(debugg_folder):
-                os.makedirs(debugg_folder)
+    create_necessary_folders(args.output)
     
     process_data(args)
     

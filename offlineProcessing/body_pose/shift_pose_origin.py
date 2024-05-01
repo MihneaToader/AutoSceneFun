@@ -12,8 +12,8 @@ import cv2
 
 from tqdm import tqdm
 
-DEBUGG = False
-
+# Get paths
+from utils import *
 
 class Pose:
     def __init__(self, timestamp, joint_names, joint_data):
@@ -59,10 +59,12 @@ class Pose:
 def process_data(args):
 
     # NOTE: Same processing for videos and images
+
+    # Set output paths
     processed_folder = os.path.join(args.output, "processed")
     debugg_folder = os.path.join(args.output, "debugg")
 
-    # Check if --data is a folder
+    # Check if --data is a folder, i.e. process all files in folder
     if os.path.isdir(args.data):
         # Iterate over all files in folder
         for file in os.listdir(args.data):
@@ -80,6 +82,8 @@ def process_data(args):
 
                 processed_data = {}
 
+                is_video = True if len(data) > 1 else False # Image and Video json files are stored in raw, skip video files for debugging
+
                 # Iterate over all timestamps
                 for timestamp, d in tqdm(data.items(), desc=f"Processing {file_name}, timestamp"):
                     p = Pose.load_from_data(d, timestamp)
@@ -87,9 +91,14 @@ def process_data(args):
                     # Shift pose origin to between eyes (change with desired pose shift function)
                     p.spo_between_eyes()
 
-                    if args.mode == "Image" and DEBUGG:
-                        output_path = os.path.join(debugg_folder, file_name + f"_debugg.jpg")
-                        p.debug_draw()
+                    # Visualise results for debugging
+                    if args.mode == "Image" and DEBUGG and not is_video:
+                        debugg_output_path = os.path.join(debugg_folder, file_name + f"_ann_debugg.jpg")
+                        org_img_path = os.path.join("data", file_name + ".jpg")
+                        p.debug_draw(org_img_path, debugg_output_path)
+
+                    elif args.mode == "Video" and DEBUGG:
+                        print("Debugging for video not supported")
 
                     # Save data
                     processed_data[timestamp] = p.pose_to_dict()
@@ -97,6 +106,7 @@ def process_data(args):
                 with open(output_path, 'w') as file:
                     json.dump(processed_data, file, indent=4)
                     print(f"Processed data saved at {output_path}")
+
 
     # Data is single file
     elif os.path.isfile(args.data):
@@ -125,6 +135,13 @@ def process_data(args):
             
             p = Pose.load_from_data(d, timestamp)
             p.spo_between_eyes()
+
+            # Visualise results for debugging
+            if args.mode == "Image" and DEBUGG:
+                debugg_output_path = os.path.join(debugg_folder, file_name + f"_ann_debugg.jpg")
+                org_img_path = os.path.join("data", file_name + ".jpg")
+                p.debug_draw(org_img_path, debugg_output_path)
+
             processed_data[timestamp] = p.pose_to_dict()
 
         with open(output_path, 'w') as file:
@@ -135,19 +152,18 @@ def process_data(args):
 def draw_landmarks_on_image(new_pose_world_landmarks_list, org_img_path, output_path):
     """NOTE: WORKS FOR IMAGES ONLY!"""
 
+    # Load image
     rgb_image = mp.Image.create_from_file(org_img_path)
+    
     bgr_image = rgb_image.numpy_view()[:, :, :3]
     annotated_image = np.copy(bgr_image)
 
     org_img_name = org_img_path.split('/')[-1].split('.')[0]
 
-    with open(f'output/raw/{org_img_name}.json', 'r') as file:
+    with open(f'{OUTPUT_DIR}/body_pose/debugg/landmarks/{org_img_name}_landmarks.json', 'r') as file:
         joints = json.load(file)
 
     pose_landmarks_list = joints.get("pose_landmarks")
-
-    # Get landmarks in world coords (debuggin)
-    pose_world_landmarks_list = new_pose_world_landmarks_list
 
     pose_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
     
@@ -162,8 +178,9 @@ def draw_landmarks_on_image(new_pose_world_landmarks_list, org_img_path, output_
         solutions.pose.POSE_CONNECTIONS,
         solutions.drawing_styles.get_default_pose_landmarks_style())
 
+    # Get world landmarks for debugging
     world_landmarks = [
-        landmark_pb2.Landmark(x=landmark[0], y=landmark[1], z=landmark[2]) for landmark in pose_world_landmarks_list
+        landmark_pb2.Landmark(x=landmark[0], y=landmark[1], z=landmark[2]) for landmark in new_pose_world_landmarks_list
     ]
 
     # Add position text near each landmark.
@@ -171,38 +188,50 @@ def draw_landmarks_on_image(new_pose_world_landmarks_list, org_img_path, output_
         x, y = int(landmark.x * annotated_image.shape[1]), int(landmark.y * annotated_image.shape[0])
         cv2.putText(annotated_image, f'({world_landmark.x:.2f}, {world_landmark.y:.2f}, {world_landmark.z:.2f})', (x, y -20), 
                     cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2) # 1.0 is font size, 2 is thickness
-        
+    
     bgr_image = cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR)
 
     cv2.imwrite(output_path, bgr_image)
 
 
+def create_necessary_folders(output_path):
+    # Function to create folder if it doesn't exist
+    def ensure_folder(path):
+        if not os.path.exists(path):
+            os.makedirs(path)
+
+    # Ensure the base output path exists
+    ensure_folder(output_path)
+
+    # Create subdirectories
+    subdirectories = ["processed"]
+    if DEBUGG:
+        pass # debugg folder must exist for debugg landmarks to be available
+    
+    for subdir in subdirectories:
+        ensure_folder(os.path.join(output_path, subdir))
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-d", "--data", type=str, default="output/raw", help="Path to image, video or stream data folder")
-    parser.add_argument("--mode", type=str, default="Image", help="Choose mode [Image, Video]")
-    parser.add_argument("-out", "--output", type=str, default="output", help="Path to save output")
+    parser.add_argument("-d", "--data", type=str, default=os.path.join(OUTPUT_DIR, "body_pose", "raw"), 
+                        help="Path to image, video or stream data folder")
+    parser.add_argument("--mode", type=str, default="Image", 
+                        help="Choose mode [Image, Video]")
+    parser.add_argument("-out", "--output", type=str, default=os.path.join(OUTPUT_DIR, "body_pose"),
+                        help="Path to save output")
+    parser.add_argument("--debugg", type=bool, default=False, 
+                        help="Debugg mode")
     args = parser.parse_args()
 
     # Check if output is folder and not file
     if not os.path.isdir(args.output):
         raise ValueError(f"Output path {args.output} is not a folder")
     
-    else:
-        # Check if output folder exists, else create it
-        if not os.path.exists(args.output):
-            os.makedirs(args.output)
-
-            # Add processed folder
-            os.makedirs(os.path.join(args.output, "processed"))
-        
-        else:
-            # Add output folder for processed data
-            processed_folder = os.path.join(args.output, "processed")
-            if not os.path.exists(processed_folder):
-                os.makedirs(processed_folder)
-
-    # TODO: apply new folder structure to code!
+    global DEBUGG # Make DEBUGG a global variable
+    DEBUGG = args.debugg
+    
+    create_necessary_folders(args.output)
 
     process_data(args)
     

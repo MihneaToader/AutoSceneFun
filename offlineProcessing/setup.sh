@@ -3,9 +3,9 @@
 # Get the current directory
 CURRENT_DIR=$(pwd)
 
-# Check if the script is not executed from the bodyPose folder
-if [[ "$CURRENT_DIR" != *"bodyPose"* ]]; then
-    echo "Please navigate to the 'bodyPose' directory and run the setup script from there."
+# Check if the script is not executed from the offlineProcessing folder
+if [[ "$CURRENT_DIR" != *"offlineProcessing"* ]]; then
+    echo "Please navigate to the 'offlineProcessing' directory and run the setup script from there."
     exit 1
 fi
 
