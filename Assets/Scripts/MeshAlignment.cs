@@ -17,6 +17,7 @@ public class MeshAlignment : MonoBehaviour
     bool sceneModelLoaded = false;
     bool savedTarget = false;
     bool isAligning = false;
+    bool foundFloor = false;
 
     void Start()
     {
@@ -80,6 +81,8 @@ public class MeshAlignment : MonoBehaviour
                     DisplayMesh(targetMesh, transform);
                     icp = new MeshICP(sourceDMesh, targetTree);
                     icp.MaxIterations = 1;
+                    icp.Translation = new Vector3d(sourceMeshObject.transform.position.x, sourceMeshObject.transform.position.y, sourceMeshObject.transform.position.z);
+                    icp.Rotation = new Quaterniond(sourceMeshObject.transform.rotation.x, sourceMeshObject.transform.rotation.y, sourceMeshObject.transform.rotation.z, sourceMeshObject.transform.rotation.w);
                     savedTarget = true;
                 }
             } else if (!isAligning)
@@ -132,9 +135,16 @@ public class MeshAlignment : MonoBehaviour
         isAligning = true;
 
         await Task.Run(() =>icp.Solve(true));
-
+        
+        // ICP may rotate about X or Z, which is not desired. Simply set X and Z rotation to 0 and update ICP internally for next iteration.
+        Quaternion solvedRotationQuat = new Quaternion((float)icp.Rotation.x, (float)icp.Rotation.y, (float)icp.Rotation.z, (float)icp.Rotation.w);
+        Vector3 eulerRep = solvedRotationQuat.eulerAngles;
+        eulerRep.x = 0;
+        eulerRep.z = 0;
+        Quaternion fixedRotationQuat = Quaternion.Euler(eulerRep);
+        icp.Rotation = new Quaterniond(fixedRotationQuat.x, fixedRotationQuat.y, fixedRotationQuat.z, fixedRotationQuat.w);
         sourceMeshObject.transform.position = new Vector3((float)icp.Translation.x, (float)icp.Translation.y, (float)icp.Translation.z);
-        sourceMeshObject.transform.rotation = new Quaternion((float)icp.Rotation.x, (float)icp.Rotation.y, (float)icp.Rotation.z, (float)icp.Rotation.w);
+        sourceMeshObject.transform.rotation = fixedRotationQuat;
         isAligning = false;
     }
 
@@ -156,23 +166,6 @@ public class MeshAlignment : MonoBehaviour
         }
         DMesh3 dMesh = DMesh3Builder.Build(g3Vertices, triangles, g3Normals);
         return dMesh;
-    }
-
-    // Convert g3.DMesh3 to Unity.Mesh
-    private Mesh DMeshToUnityMesh(DMesh3 dMesh)
-    {
-        Mesh unityMesh = new Mesh();
-        Vector3d[] vertices = dMesh.Vertices().ToArray();
-        int[] triangles = dMesh.TrianglesBuffer.ToArray();
-        Vector3[] unityVertices = new Vector3[vertices.Length];
-        for (int i = 0; i < vertices.Length; i++)
-        {
-            unityVertices[i] = new Vector3((float)vertices[i].x, (float)vertices[i].y, (float)vertices[i].z);
-        }
-        unityMesh.vertices = unityVertices;
-        unityMesh.triangles = triangles;
-        unityMesh.RecalculateNormals();
-        return unityMesh;
     }
 
     GameObject DisplayMesh(Mesh mesh, Transform parentTransform)
