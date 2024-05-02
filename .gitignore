@@ -14,10 +14,11 @@
 /Assets/Scans/
 
 
-# BodyPose
-bodyPose/data/*
-bodyPose/.*
-bodyPose/models/*.task
+# offlineProcessing
+offlineProcessing/data/*
+offlineProcessing/.*
+offlineProcessing/models/*.task
+offlineProcessing/output/*
 
 
 # MemoryCaptures can get excessive in size.
