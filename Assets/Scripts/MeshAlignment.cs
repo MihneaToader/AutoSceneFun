@@ -13,6 +13,7 @@ public class MeshAlignment : MonoBehaviour
     DMeshAABBTree3 targetTree;
     DMesh3 sourceDMesh;
     MeshICP icp;
+    const int vertexReductionFactor = 3;
     int frameWait = 0;
     bool sceneModelLoaded = false;
     bool savedTarget = false;
@@ -71,14 +72,21 @@ public class MeshAlignment : MonoBehaviour
                 if (targetMeshes.Count != 0)
                 {
                     Debug.Log("Number of anchors: " + targetMeshes.Count);
+                    // Compute target mesh tree
                     Mesh targetMesh = CombineMeshes(targetMeshes);
                     foreach (GameObject crtObj in toDestroy)
                         Destroy(crtObj);
                     DMesh3 targetDMesh = UnityMeshToDMesh(targetMesh);
-                    sourceDMesh = UnityMeshToDMesh(sourceMeshFilter.sharedMesh);
                     targetTree = new DMeshAABBTree3(targetDMesh);
                     targetTree.Build();
                     DisplayMesh(targetMesh, transform);
+                    // Compute simplified source mesh
+
+                    sourceDMesh = UnityMeshToDMesh(sourceMeshFilter.sharedMesh);
+                    Reducer r = new Reducer(sourceDMesh);
+                    r.ReduceToTriangleCount(sourceMeshFilter.sharedMesh.vertexCount / vertexReductionFactor);
+                    
+                    // Initialize ICP with computed source mesh and target tree
                     icp = new MeshICP(sourceDMesh, targetTree);
                     icp.MaxIterations = 1;
                     icp.Translation = new Vector3d(sourceMeshObject.transform.position.x, sourceMeshObject.transform.position.y, sourceMeshObject.transform.position.z);
