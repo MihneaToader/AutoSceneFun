@@ -18,7 +18,6 @@ public class MeshAlignment : MonoBehaviour
     bool sceneModelLoaded = false;
     bool savedTarget = false;
     bool isAligning = false;
-    bool foundFloor = false;
 
     void Start()
     {
@@ -83,8 +82,10 @@ public class MeshAlignment : MonoBehaviour
                     // Compute simplified source mesh
 
                     sourceDMesh = UnityMeshToDMesh(sourceMeshFilter.sharedMesh);
+                    Debug.Log("Initial vertex count: " + sourceDMesh.Vertices().ToList().Count);
                     Reducer r = new Reducer(sourceDMesh);
-                    r.ReduceToTriangleCount(sourceMeshFilter.sharedMesh.vertexCount / vertexReductionFactor);
+                    r.ReduceToVertexCount(sourceMeshFilter.sharedMesh.vertexCount / vertexReductionFactor);
+                    Debug.Log("Reduced vertex count: " + sourceDMesh.Vertices().ToList().Count);
                     
                     // Initialize ICP with computed source mesh and target tree
                     icp = new MeshICP(sourceDMesh, targetTree);
