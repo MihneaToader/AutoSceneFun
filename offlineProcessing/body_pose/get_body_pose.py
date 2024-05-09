@@ -7,51 +7,18 @@ import json
 from PIL import Image
 
 # Visualisation
-from mediapipe import solutions
-from mediapipe.framework.formats import landmark_pb2
-import numpy as np
+from body_pose.visualisation import draw_landmarks_on_image
 import cv2
-from pymediainfo import MediaInfo
-# from google.colab.patches import cv2_imshow
 
+import datetime
+from PIL import Image
+from pymediainfo import MediaInfo
 
 from tqdm import tqdm
 import argparse
 import os
 
 from utils import *
-
-def draw_landmarks_on_image(rgb_image, detection_result):
-    pose_landmarks_list = detection_result.pose_landmarks
-    annotated_image = np.copy(rgb_image)
-
-    # Get landmarks in world coords (debuggin)
-    pose_world_landmarks_list = detection_result.pose_world_landmarks
-
-    # Loop through the detected poses to visualize.
-    for pose_landmarks, pose_world_landmarks in zip(pose_landmarks_list, pose_world_landmarks_list):
-        pose_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
-        norm_landmarks = [
-            landmark_pb2.NormalizedLandmark(x=landmark.x, y=landmark.y, z=landmark.z) for landmark in pose_landmarks
-        ]
-        pose_landmarks_proto.landmark.extend(norm_landmarks)
-        solutions.drawing_utils.draw_landmarks(
-            annotated_image,
-            pose_landmarks_proto,
-            solutions.pose.POSE_CONNECTIONS,
-            solutions.drawing_styles.get_default_pose_landmarks_style())
-
-        world_landmarks = [
-            landmark_pb2.Landmark(x=landmark.x, y=landmark.y, z=landmark.z) for landmark in pose_world_landmarks
-        ]
-
-        # Add position text near each landmark.
-        for landmark, world_landmark in zip(norm_landmarks, world_landmarks):
-            x, y = int(landmark.x * annotated_image.shape[1]), int(landmark.y * annotated_image.shape[0])
-            cv2.putText(annotated_image, f'({world_landmark.x:.2f}, {world_landmark.y:.2f}, {world_landmark.z:.2f})', (x, y -20), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2) # 1.0 is font size, 2 is thickness
-        
-    return annotated_image
 
 def get_body_pose_from_image(model_path, image, creation_time, output_path, image_name, visualise=False):
     # Load model
@@ -208,11 +175,6 @@ def get_body_pose_from_video(model_path, video, output_path, video_name, startin
         with open(landmarks_file_path, 'w') as f:
             json.dump(pose_data, f, indent=4)
 
-
-
-import datetime
-from PIL import Image
-from pymediainfo import MediaInfo
 
 def get_data_creation_date(data_path):
     """Get creation time of video from metadata, including milliseconds if available."""
