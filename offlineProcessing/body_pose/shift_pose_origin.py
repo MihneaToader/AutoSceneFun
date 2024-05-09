@@ -69,7 +69,7 @@ def process_data(args):
                 file_path = os.path.join(args.data, file)
 
                 # Get output path
-                file_name = file.split('.')[0]
+                file_name = file[:file.rfind('.')]
                 output_path = os.path.join(processed_folder, file_name + "_p.json")
 
                 # Load data
@@ -90,7 +90,7 @@ def process_data(args):
                     # Visualise results for debugging
                     if args.mode == "Image" and DEBUGG and not is_video:
                         debugg_output_path = os.path.join(debugg_folder, file_name + f"_ann_debugg.jpg")
-                        org_img_path = os.path.join("data", file_name + ".jpg")
+                        org_img_path = os.path.join(DATA_DIR, "media", file_name + ".jpg")
                         p.debug_draw(org_img_path, debugg_output_path)
 
                     elif args.mode == "Video" and DEBUGG:

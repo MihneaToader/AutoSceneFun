@@ -3,7 +3,6 @@ from mediapipe import solutions
 from mediapipe.framework.formats import landmark_pb2
 import numpy as np
 import cv2
-from pymediainfo import MediaInfo
 # from google.colab.patches import cv2_imshow
 
 from utils import OUTPUT_DIR

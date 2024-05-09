@@ -10,15 +10,13 @@ from PIL import Image
 from body_pose.visualisation import draw_landmarks_on_image
 import cv2
 
-import datetime
-from PIL import Image
-from pymediainfo import MediaInfo
-
 from tqdm import tqdm
 import argparse
 import os
 
 from utils import *
+
+# Apple silicon support
 
 def get_body_pose_from_image(model_path, image, creation_time, output_path, image_name, visualise=False):
     # Load model
@@ -78,7 +76,7 @@ def get_body_pose_from_image(model_path, image, creation_time, output_path, imag
 def get_body_pose_from_video(model_path, video, output_path, video_name, starting_time, target_fps, visualise=False):
 
     # Read metadata from video
-    fps = video.get(cv2.CAP_PROP_FPS)
+    fps = round(video.get(cv2.CAP_PROP_FPS))
     frame_width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
@@ -142,15 +140,15 @@ def get_body_pose_from_video(model_path, video, output_path, video_name, startin
                         continue
                     
                     # Save data with global timestamp as key
-                    global_timestamp = starting_time + datetime.timedelta(milliseconds=timestamp_ms)
-                    global_timestamp = global_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                    global_timestamp = starting_time + timestamp_ms/1000
+            
 
                     # if results.pose_landmarks: # world coord are found under results.pose_world_landmarks
                     #     landmarks_dict = {'NormalizedLandmark':{i: {'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for i, lm in enumerate(results.pose_landmarks[0])}}
                     #     pose_data[global_timestamp] = landmarks_dict
                     if results.pose_world_landmarks: # world coord are found under results.pose_world_landmarks
                         landmarks_dict = {'Landmark':{i: {'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for i, lm in enumerate(results.pose_world_landmarks[0])}}
-                        pose_data[global_timestamp] = landmarks_dict
+                        pose_data[f"{global_timestamp}"] = landmarks_dict
 
 
                     if visualise and results.pose_landmarks:
@@ -179,39 +177,12 @@ def get_body_pose_from_video(model_path, video, output_path, video_name, startin
 def get_data_creation_date(data_path):
     """Get creation time of video from metadata, including milliseconds if available."""
 
-    # Account for videos
-    if data_path.lower().endswith(('.mp4', '.mov')):
-        media_info = MediaInfo.parse(data_path)
-        for track in media_info.tracks:
-            if track.track_type == "Video":
-                creation_time_str = track.encoded_date
-                # Adjust format to possibly include milliseconds
-                formats = ["%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"]  # Added format with %f for milliseconds
-                for fmt in formats:
-                    try:
-                        creation_time = datetime.datetime.strptime(creation_time_str.replace(' UTC', ''), fmt)
-                        return creation_time
-                    except ValueError:
-                        continue
-                print("Warning: Creation time not found in video metadata or does not match expected format.")
-                return None
+    try:  
+        timestamp = os.stat(data_path).st_birthtime
 
-    # Get image creation date
-    elif data_path.lower().endswith(('.jpg', '.jpeg')):
-        with Image.open(data_path) as img:
-            exif_data = img._getexif()
-            if exif_data:
-                datetime_org = exif_data.get(36867)  # DateTimeOriginal tag
-                if datetime_org:
-                    formats = ["%Y:%m:%d %H:%M:%S.%f", "%Y:%m:%d %H:%M:%S"]  # Added format with %f for milliseconds
-                    for fmt in formats: # Try to get milliseconds
-                        try:
-                            creation_time = datetime.datetime.strptime(datetime_org, fmt)
-                            return creation_time
-                        except ValueError:
-                            continue
-
-    else:
+        return timestamp
+    
+    except Exception as e:
         print("Warning: Unsupported media type.")
         return None
 
@@ -223,7 +194,7 @@ def process_data(args):
     if args.mode.lower() == "image":
         # Load all images in folder
         if os.path.isdir(args.data):
-            images = [i for i in os.listdir(args.data) if i.endswith(".jpg")]
+            images = [i for i in os.listdir(args.data) if i.lower().endswith(".jpg")]
             for image in images:
                 image_path = os.path.join(args.data, image)
                 i = mp.Image.create_from_file(image_path)
@@ -247,7 +218,8 @@ def process_data(args):
         # Process whole folder
         if os.path.isdir(args.data):
             # Isolate videos in folder
-            videos = [v for v in os.listdir(args.data) if v.endswith(".mov") or v.endswith(".mp4")]
+            videos = [v for v in os.listdir(args.data) if v.lower().endswith(".mov") or v.lower().endswith(".mp4")]
+
             for video in videos:
                 video_path = os.path.join(args.data, video)
                 v = cv2.VideoCapture(video_path)
@@ -259,6 +231,7 @@ def process_data(args):
                 creation_time = get_data_creation_date(video_path)
                 new_video_name = str(creation_time)
                 get_body_pose_from_video(model_path=args.model, video=v, visualise=args.visualise, output_path=args.output, video_name=new_video_name, starting_time=creation_time, target_fps=args.set_fps)
+        
         # Process single video
         elif os.path.isfile(args.data):
             v = cv2.VideoCapture(args.data)
@@ -297,9 +270,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-m", "--mode", type=str, default="Video", 
                         help="Generate pose from [Image, Video, Stream]")
-    parser.add_argument("--model", type=str, default=os.path.join(MODELS_DIR, "pose_landmarker_lite.task"), 
+    parser.add_argument("--model", type=str, default=os.path.join(MODELS_DIR, "pose_landmarker_heavy.task"), 
                         help="Path to model")
-    parser.add_argument("-d", "--data", type=str, default=DATA_DIR, 
+    parser.add_argument("-d", "--data", type=str, default=os.path.join(DATA_DIR, "media"), 
                         help="Path to image, video or stream data folder")
     parser.add_argument("-v", "--visualise", type=bool, default=False, 
                         help="Visualise results")
