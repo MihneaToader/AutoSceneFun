@@ -78,9 +78,9 @@ public class MeshAlignment : MonoBehaviour
                     DMesh3 targetDMesh = UnityMeshToDMesh(targetMesh);
                     targetTree = new DMeshAABBTree3(targetDMesh);
                     targetTree.Build();
-                    DisplayMesh(targetMesh, transform);
-                    // Compute simplified source mesh
+                    DisplayMesh(targetMesh, transform, "ComputedMesh");
 
+                    // Compute simplified source mesh
                     sourceDMesh = UnityMeshToDMesh(sourceMeshFilter.sharedMesh);
                     Debug.Log("Initial vertex count: " + sourceDMesh.Vertices().ToList().Count);
                     Reducer r = new Reducer(sourceDMesh);
@@ -136,7 +136,7 @@ public class MeshAlignment : MonoBehaviour
                                         3, 2, 6, 6, 7, 3};
         volumeMesh.triangles = volumeMesh.triangles.Reverse().ToArray();
         volumeMesh.RecalculateNormals();
-        return DisplayMesh(volumeMesh, volumeTransform);
+        return DisplayMesh(volumeMesh, volumeTransform, "Volume");
     }
 
     async void AlignMeshes()
@@ -177,9 +177,9 @@ public class MeshAlignment : MonoBehaviour
         return dMesh;
     }
 
-    GameObject DisplayMesh(Mesh mesh, Transform parentTransform)
+    GameObject DisplayMesh(Mesh mesh, Transform parentTransform, string name)
     {
-        GameObject meshObj = new GameObject("Mesh");
+        GameObject meshObj = new GameObject(name);
         //Add Components
         MeshFilter filter = meshObj.AddComponent<MeshFilter>();
         MeshRenderer renderer = meshObj.AddComponent<MeshRenderer>();
