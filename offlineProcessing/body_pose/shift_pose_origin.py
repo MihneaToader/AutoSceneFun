@@ -26,7 +26,7 @@ class Pose:
         if 'Landmark' not in data:
             raise KeyError("Pose only supports 'Landmark'-data, no relative poses.")
 
-        joint_names_path = 'models/pose_landmarkers.json'
+        joint_names_path = os.path.join("models", "pose_landmarkers.json")
         with open(joint_names_path, 'r') as file:
             joint_names = json.load(file).values()
 
@@ -121,7 +121,7 @@ def process_data(args):
         file_path = args.data
 
         # Get output path
-        file_name = args.data.split('/')[-1][:-5]
+        file_name = os.path.basename(file_path)[:-5]
         output_path = os.path.join(processed_folder, file_name + "_p.json")
 
         # Load data
@@ -158,9 +158,11 @@ def draw_landmarks_on_image(new_pose_world_landmarks_list, org_img_path, output_
     bgr_image = rgb_image.numpy_view()[:, :, :3]
     annotated_image = np.copy(bgr_image)
 
-    org_img_name = org_img_path.split('/')[-1].split('.')[0]
+    org_img_name = os.path.splitext(os.path.basename(org_img_path))[0]
 
-    with open(f'{OUTPUT_DIR}/body_pose/debugg/landmarks/{org_img_name}_landmarks.json', 'r') as file:
+    joints_path = os.path.join(OUTPUT_DIR, "body_pose", "debugg", "landmarks", f"{org_img_name}_landmarks.json")
+
+    with open(joints_path, 'r') as file:
         joints = json.load(file)
 
     pose_landmarks_list = joints.get("pose_landmarks")
