@@ -10,19 +10,27 @@ public class MeshAlignment : MonoBehaviour
 {
     public GameObject sourceMeshObject;
     private MeshFilter sourceMeshFilter;
+    public OVRSceneManager sceneManager;
+    public OVRPassthroughLayer passthrough;
     DMeshAABBTree3 targetTree;
     DMesh3 sourceDMesh;
     MeshICP icp;
     const int vertexReductionFactor = 3;
     int frameWait = 0;
+    int maxIcpIterations;
+    int icpIterations;
     bool sceneModelLoaded = false;
     bool savedTarget = false;
     bool isAligning = false;
+    bool finishedAligning = false;
 
     void Start()
     {
         sourceMeshFilter = sourceMeshObject.GetComponent<MeshFilter>();
-        var sceneManager = FindObjectOfType<OVRSceneManager>();
+        sceneManager.gameObject.SetActive(true);
+        passthrough.gameObject.SetActive(false);
+        Debug.Log(sceneManager);
+        Debug.Log(passthrough);
         sceneManager.SceneModelLoadedSuccessfully += SceneModelLoaded;
     }
 
@@ -92,12 +100,21 @@ public class MeshAlignment : MonoBehaviour
                     icp.MaxIterations = 1;
                     icp.Translation = new Vector3d(sourceMeshObject.transform.position.x, sourceMeshObject.transform.position.y, sourceMeshObject.transform.position.z);
                     icp.Rotation = new Quaterniond(sourceMeshObject.transform.rotation.x, sourceMeshObject.transform.rotation.y, sourceMeshObject.transform.rotation.z, sourceMeshObject.transform.rotation.w);
+                    icpIterations = 0;
                     savedTarget = true;
                 }
-            } else if (!isAligning)
+            } else if (!isAligning && !finishedAligning)
             {
                 Debug.Log("Starting alignment");
                 AlignMeshes();
+                icpIterations++;
+                if (icp.Converged || icpIterations >= maxIcpIterations)
+                {
+                    Debug.Log("Alignment finished");
+                    finishedAligning = true;
+                    sceneManager.gameObject.SetActive(false);
+                    passthrough.gameObject.SetActive(true);
+                }
             }
         }
     }

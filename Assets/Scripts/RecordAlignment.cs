@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using UnityEngine;
-using Newtonsoft.Json;
 
 public class RecordAlignment : MonoBehaviour
 {
@@ -26,18 +25,26 @@ public class RecordAlignment : MonoBehaviour
             scale = parentTransform.localScale;
         }
     }
-
+    
+    [System.Serializable]
     private class JsonData
     {
-        public List<JsonEntry> entries { get; set; }
+        public List<JsonEntry> entries;
     }
 
+    [System.Serializable]
     private class JsonEntry
     {
-        public string timestamp { get; set; }
-        public TransformInfo transformInfo {get; set; }
+        public string timestamp;
+        public TransformInfo transformInfo;
     }
     
+    void Start()
+    {
+        data.entries = new List<JsonEntry>();
+        Debug.Log(Application.persistentDataPath);
+    }
+
     void Update()
     {
         GameObject meshObj = GameObject.Find("ComputedMesh");
@@ -52,8 +59,9 @@ public class RecordAlignment : MonoBehaviour
         UpdateHeadset();
     }
 
-    void Destroy()
+    void OnApplicationQuit()
     {
+        Debug.Log("Saving");
         SaveData();
     }
 
@@ -72,15 +80,15 @@ public class RecordAlignment : MonoBehaviour
 
     void UpdateHeadset()
     {
-        string timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-        data.entries.Add(new JsonEntry {timestamp = timestamp, transformInfo = new TransformInfo(cameraToSave.transform)});
+        string timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+        JsonEntry newEntry = new JsonEntry {timestamp = timestamp, transformInfo = new TransformInfo(cameraToSave.transform)};
+        data.entries.Add(newEntry);
     }
 
     void SaveData()
     {
         string path = $"{Application.persistentDataPath}/headsetTracked.json";
-        string json = JsonConvert.SerializeObject(data, Formatting.Indented);
-        File.WriteAllText(path, json);
+        File.WriteAllText(path, JsonUtility.ToJson(data, true));
     }
 
     public string GetMeshOBJ(string name, Mesh mesh)
