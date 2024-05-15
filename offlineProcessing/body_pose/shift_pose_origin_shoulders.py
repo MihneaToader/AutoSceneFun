@@ -219,6 +219,7 @@ def create_necessary_folders(output_path):
     for subdir in subdirectories:
         ensure_folder(os.path.join(output_path, subdir))
 
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-d", "--data", type=str, default=os.path.join(OUTPUT_DIR, "body_pose", "raw"),
