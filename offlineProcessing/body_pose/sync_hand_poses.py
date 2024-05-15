@@ -248,8 +248,10 @@ def transform_points(points, R, scale, t):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Synchronize hand pose data from MetaQuest and body pose data.")
-    parser.add_argument("--data_hand", type=str, help="Path to the MetaQuest left hand pose data file.")
-    parser.add_argument("--data_body", type=str, help="Path to the body pose data file.")
+    parser.add_argument("--data_csv", type=str, default=os.path.join(utils.DATA_DIR, "hand_meta_quest"),
+                        help="Path to the MetaQuest left hand pose data file.")
+    parser.add_argument("--data_body", type=str, default=os.path.join(utils.OUTPUT_DIR, "body_pose", "processed"),  
+                        help="Path to the body pose data file.")
 
 
 
