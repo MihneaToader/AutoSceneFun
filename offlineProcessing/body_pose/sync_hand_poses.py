@@ -6,12 +6,35 @@ import math
 import matplotlib.pyplot as plt
 import numpy as np
 import argparse
+import pandas as pd
 
 # Local modules
 import utils
 
 
 # NOTE: ADAPT FORMAT_DATA FUNCTION TO NEW DATA FORMAT
+# NOTE 2: THIS SCRIPT ONLY MAPS DATA USING THE LEFT HAND!
+
+def plot_data(np_relevant_meta_data, np_relevant_bodypose_data, transformed_bodypose_data):
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    # Plot MetaQuest data
+    ax.scatter(np_relevant_meta_data[:, 0], np_relevant_meta_data[:, 1], np_relevant_meta_data[:, 2], c='r', label='MetaQuest Data')
+
+    # Plot BodyPose data
+    ax.scatter(np_relevant_bodypose_data[:, 0], np_relevant_bodypose_data[:, 1], np_relevant_bodypose_data[:, 2], c='b', label='BodyPose Data')
+
+    # Plot Transformed BodyPose data
+    ax.scatter(transformed_bodypose_data[:, 0], transformed_bodypose_data[:, 1], transformed_bodypose_data[:, 2], c='g', label='Transformed BodyPose Data')
+
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+    ax.legend()
+
+    plt.show()
+
 
 
 def _format_data(data) -> json:
@@ -160,13 +183,11 @@ def get_matching_timestamps_from_t(data_metaquest, data_bodypose, first_common_t
     return matched_results, t_diff
 
 
-
-
-def get_optimal_timestamp_of_sequence(data_metaquest, data_bodypose):
+def get_optimal_meta_timestamp(data_metaquest, data_bodypose):
     """
     Finds the timestamp in the detailed dataset that has the closest match to the simple dataset.
     
-    :return: The timestamp of the closest match and the minimum distance.
+    :return: (Closest timestamp meta, relevant meta data, min distance)
     """
 
     # NOTE: THIS CODE MIGHT BE PRONE TO ROTATIONS!!!
@@ -194,7 +215,7 @@ def get_optimal_timestamp_of_sequence(data_metaquest, data_bodypose):
             rel_meta_data = {simple_key: entry['Position_rotation'][joint_mapping[simple_key]] for simple_key in joint_mapping.keys()}
 
 
-    return closest_timestamp_meta, rel_meta_data ,min_distance
+    return closest_timestamp_meta, rel_meta_data, min_distance
 
 
 
@@ -243,96 +264,153 @@ def transform_points(points, R, scale, t):
     transformed_points = rotated_points + t.T
     return transformed_points
 
+def process_data(meta_data_path, body_pose_path, output_path, delta_ms=30):
 
 
-if __name__ == "__main__":
+    # =====================
+    # Step 1: Load the data
+    # =====================
 
-    parser = argparse.ArgumentParser(description="Synchronize hand pose data from MetaQuest and body pose data.")
-    parser.add_argument("--data_csv", type=str, default=os.path.join(utils.DATA_DIR, "hand_meta_quest"),
-                        help="Path to the MetaQuest left hand pose data file.")
-    parser.add_argument("--data_body", type=str, default=os.path.join(utils.OUTPUT_DIR, "body_pose", "processed"),  
-                        help="Path to the body pose data file.")
+    # Load LEFT HAND from metaquest data
+    left_hand_data_filename = [i for i in os.listdir(meta_data_path) if "left" and "hand" in i.lower()][0]
+    left_hand_data_path = os.path.join(meta_data_path, left_hand_data_filename)
+    with open(left_hand_data_path, 'r') as file:
+        data_lefthand = json.load(file)
+        data_lefthand = _format_data(data_lefthand['Entries']) # Remove Entries if not in data anymore
 
-
-
-    with open(os.path.join(utils.DATA_DIR, "hand_meta_quest", "2024-05-09 13:39:27nd Tracking leftHand Tracking left (OVRHand)_hand_data.json"), 'r') as file:
-        data = json.load(file)
-
-    entries = _format_data(data["Entries"])
-
-
-    video = "data/media/IMG_0821.MOV"
-
-    birth_time = _get_data_creation_date(video)
-
-    with open("output/body_pose/processed/1715254764.0_p.json", 'r') as file:
+    # Load body pose data
+    with open(body_pose_path, 'r') as file:
         data_bodypose = json.load(file)
 
+    # ============================
+    # Step 2: Synchronize the data
+    # ============================
 
-    delta = 30
-    first_t_meta, first_t_body = get_first_common_t(entries, data_bodypose, delta)
+    # Goal is to find the first common timestamp of the two datasets
+    # Common timestamp = first datapoint of bodypose and metaquest that are within delta_ms of each other
+    first_t_meta, first_t_body = get_first_common_t(data_lefthand, data_bodypose, delta_ms)
 
-    # print(f"First common timestamp: meta: {first_t_meta}, body: {first_t_body}")
-
-    # Find first timestamp where hands overlap, use this timestamp as the first common timestamp
-    metaquest_data_at_t = get_metaquest_data_at_t(entries, first_t_meta)
+    # Get data at first common timestamp
+    # MetaQuest data is gathered around 1 sec before and after the timestamp
+    # This is due to the exact timestamp of the MetaQuest (bodypose only second precision)
+    metaquest_data_at_t = get_metaquest_data_at_t(data_lefthand, first_t_meta)
     body_pose_data_at_t = get_bodypose_data_at_t(data_bodypose, first_t_body)
 
-    # 16: Wrist, 18: Hand_PinkyProximal, 20: Hand_MiddleProximal
-    rel_body_pose_data_at_t = {key: value for key, value in body_pose_data_at_t.items() if key in ['16', '18', '20']}
-
-    # only keep right hand data of bodypose = keep keys of list
-
-    closest_t_meta, rel_meta_data, min_distance = get_optimal_timestamp_of_sequence(metaquest_data_at_t, body_pose_data_at_t)
+    
+    # Get timestamp of MetaQuest data that is closest to the bodypose data (min. distance of relevant joints)
+    closest_t_meta, relevant_meta_data, _ = get_optimal_meta_timestamp(metaquest_data_at_t, body_pose_data_at_t)
     # print(f"Best matching MetaQuest timestamp around first common timestamp: {closest_t_meta} with min_distance: {min_distance}")
 
-    np_rel_meta_data = _dict_to_numpy(rel_meta_data)
-    np_body_pose_data = _dict_to_numpy(rel_body_pose_data_at_t)
+    # Isolate timestamps of common data points (within delta_ms of each other), starting from the first common timestamp
+    # TODO: IS FIRST COMMON TIMESTAMP INCLUDED IN COMMON T?
+    common_t, _ = get_matching_timestamps_from_t(data_lefthand, data_bodypose, closest_t_meta, delta_ms)
 
-
-    print("Before transformation distances:", np.linalg.norm(np_rel_meta_data - np_body_pose_data, axis=1))
-
-    R, scale, t = kabsch_scaling(np_rel_meta_data, np_body_pose_data)
-
-    print(f"Rotation matrix:\n{R}")
-    print(f"Scaling factor: {scale}")
-    print(f"Translation vector: {t}")
-
-    transformed_body_pose_data = transform_points(np_body_pose_data, R, scale, t)
-
-    print("After transformation distances:", np.linalg.norm(np_rel_meta_data - transformed_body_pose_data, axis=1))
-
-
-    # Isolate all frames that are close
-    common_t, differences = get_matching_timestamps_from_t(entries, data_bodypose, closest_t_meta, delta)
-
+    # for debugging
     db = []
     da = []
 
-    for t_meta, t_body in common_t:
-        metaquest_data_at_t = get_metaquest_data_at_t(entries, t_meta)
+    # Iterate over all common timestamps and calculate the optimal transformation
+    for idx, (t_meta, t_body) in enumerate(common_t):
+
+        metaquest_data_at_t = get_metaquest_data_at_t(data_lefthand, t_meta)
         body_pose_data_at_t = get_bodypose_data_at_t(data_bodypose, t_body)
 
-        rel_body_pose_data_at_t = {key: value for key, value in body_pose_data_at_t.items() if key in ['16', '18', '20']}
-        _, rel_meta_data, _ = get_optimal_timestamp_of_sequence(metaquest_data_at_t, body_pose_data_at_t)
+        _, relevant_meta_data, _ = get_optimal_meta_timestamp(metaquest_data_at_t, body_pose_data_at_t)
 
-        np_rel_meta_data = _dict_to_numpy(rel_meta_data)
-        np_body_pose_data = _dict_to_numpy(rel_body_pose_data_at_t)
+        # ================================
+        # Step 3: Calculate transformation
+        # ================================
 
-        R, scale, t = kabsch_scaling(np_rel_meta_data, np_body_pose_data)
+        # 15: left_Wrist, 17: left_Hand_PinkyProximal, 19: Hand_MiddleProximal
+        # only keep left hand data of bodypose = keep keys of list
+        relevant_bodypose_data_at_t = {key: value for key, value in body_pose_data_at_t.items() if key in ['15', '17', '19']}
+        
+        # Convert dictionaries to numpy arrays
+        np_relevant_meta_data = _dict_to_numpy(relevant_meta_data)
+        np_relevant_bodypose_data = _dict_to_numpy(relevant_bodypose_data_at_t)
 
-        # transformed_body_pose_data = transform_points(_dict_to_numpy(body_pose_data_at_t), R, scale, t)
-        transformed_body_pose_data = transform_points(np_body_pose_data, R, scale, t)
+        # print("Before transformation distances:", np.linalg.norm(np_relevant_meta_data - np_relevant_bodypose_data, axis=1))
 
-        distances_before = np.abs(np_rel_meta_data - np_body_pose_data)
-        distances_after = np.abs(np_rel_meta_data - transformed_body_pose_data)
+        # Calculate the optimal rotation matrix, scaling factor, and translation vector
+        R, scale, t = kabsch_scaling(np_relevant_meta_data, np_relevant_bodypose_data)
+
+        # print(f"Rotation matrix:\n{R}")
+        # print(f"Scaling factor: {scale}")
+        # print(f"Translation vector: {t}")
+
+        transformed_bodypose_data = transform_points(np_relevant_bodypose_data, R, scale, t)
+
+        if idx == 0:
+            plot_data(np_relevant_meta_data, np_relevant_bodypose_data, transformed_bodypose_data)
+
+        # print("After transformation distances:", np.linalg.norm(np_rel_meta_data - transformed_body_pose_data, axis=1))
+
+        # ====================================
+        # (DEBUGGING) Calculate mean distances
+        # ====================================
+
+        distances_before = np.abs(np_relevant_meta_data - np_relevant_bodypose_data)
+        distances_after = np.abs(np_relevant_meta_data - transformed_bodypose_data)
 
         db.append(distances_before)
         da.append(distances_after)
-
 
     db = np.concatenate(db, axis=0)
     da = np.concatenate(da, axis=0)
 
     print(f"Mean distance before transformation: {np.mean(db, axis=0)}")
     print(f"Mean distance after transformation: {np.mean(da, axis=0)}")
+
+
+
+def main():
+
+    parser = argparse.ArgumentParser(description="Synchronize hand pose data from MetaQuest and body pose data.")
+    parser.add_argument("--data_csv", type=str, default=os.path.join(utils.DATA_DIR, "data_mapping.csv"),
+                        help="Path to the MetaQuest left hand pose data file.")
+    parser.add_argument("--output_dir", type=str, default=os.path.join(utils.OUTPUT_DIR, "body_pose", "final_recordings"),
+                        help="Path to the output directory.")
+    parser.add_argument("--delta", type=int, default=30,
+                        help="Time difference threshold in milliseconds.")
+
+    args = parser.parse_args()
+
+    # Check if data mapping file exists
+    if not os.path.isfile(args.data_csv):
+        print(f"Error: Data file not found at {args.data_csv}.")
+        exit(1)
+
+    # Ensure that output directory exists
+    if not os.path.exists(args.output_dir):
+        os.makedirs(args.output_dir)
+
+    mappings = pd.read_csv(args.data_csv, index_col="id")
+
+    for index, recording in mappings.iterrows():
+        
+        # =====================================
+        # Set paths and ensure folder structure
+        # =====================================
+
+        if os.path.exists(recording["meta_data"]):
+            meta_data_path = recording["meta_data"]
+        else:
+            meta_data_path = os.path.join(utils.DATA_DIR, "meta_quest", recording["meta_data"])
+
+        if os.path.exists(recording["body_pose_media"]):
+            body_pose_path = recording["body_pose_media"]
+        else:
+            body_pose_path = os.path.join(utils.OUTPUT_DIR, "body_pose", "processed", recording["body_pose_media"].split(".")[0] + "_p.json")
+    
+        # Set output path
+        if pd.isna(recording["final_name"]) or recording["final_name"].strip() == "":
+            output_path = os.path.join(args.output_dir, f"session_{index}")
+            os.makedirs(output_path, exist_ok=True)
+        else:
+            output_path = os.path.join(args.output_dir, recording["final_name"])
+            os.makedirs(output_path, exist_ok=True)
+
+        process_data(meta_data_path, body_pose_path, output_path, args.delta)
+
+if __name__ == "__main__":
+    main()
