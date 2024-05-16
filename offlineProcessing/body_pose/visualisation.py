@@ -3,6 +3,7 @@ from mediapipe import solutions
 from mediapipe.framework.formats import landmark_pb2
 import numpy as np
 import cv2
+import os
 # from google.colab.patches import cv2_imshow
 
 from utils import OUTPUT_DIR
@@ -51,9 +52,11 @@ def draw_processed_landmarks_on_image(new_pose_world_landmarks_list, org_img_pat
     bgr_image = rgb_image.numpy_view()[:, :, :3]
     annotated_image = np.copy(bgr_image)
 
-    org_img_name = org_img_path.split('/')[-1].split('.')[0]
+    org_img_name = os.path.splitext(os.path.basename(org_img_path))[0]
 
-    with open(f'{OUTPUT_DIR}/body_pose/debugg/landmarks/{org_img_name}_landmarks.json', 'r') as file:
+    joints_path = os.path.join(OUTPUT_DIR, "body_pose", "debugg", "landmarks", f"{org_img_name}_landmarks.json")
+
+    with open(joints_path, 'r') as file:
         joints = json.load(file)
 
     pose_landmarks_list = joints.get("pose_landmarks")
