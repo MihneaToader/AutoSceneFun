@@ -45,6 +45,15 @@ class Pose:
 
         self.joints -= center  # Shift all joints to center the pose between the eyes
 
+    def spo_between_shoulders(self):
+
+        left_shoulder = self.joints[self.joint_names.index("left_shoulder")]
+        right_shoulder = self.joints[self.joint_names.index("right_shoulder")]
+
+        center = (left_shoulder + right_shoulder) / 2
+
+        self.joints -= center  # Shift all joints to center the pose between the eyes
+
     def pose_to_dict(self):
         return {'Landmark': {i: {'x': lm[0], 'y': lm[1], 'z': lm[2]} for i, lm in enumerate(self.joints)}}
     
@@ -53,7 +62,6 @@ class Pose:
 
     def __repr__(self):
         return f"Pose({', '.join(f'{name}={point}' for name, point in zip(self.joint_names, self.joints))})"
-
 
 
 def process_data(args):
@@ -89,7 +97,8 @@ def process_data(args):
                     p = Pose.load_from_data(d, timestamp)
 
                     # Shift pose origin to between eyes (change with desired pose shift function)
-                    p.spo_between_eyes()
+                    # p.spo_between_eyes()
+                    p.spo_between_shoulders()
 
                     # Visualise results for debugging
                     if args.mode == "Image" and DEBUGG and not is_video:
@@ -134,7 +143,8 @@ def process_data(args):
         for timestamp, d in tqdm(data.items(), desc=f"Processing {file_name}, timestamp"):
             
             p = Pose.load_from_data(d, timestamp)
-            p.spo_between_eyes()
+            # p.spo_between_eyes()
+            p.spo_between_shoulders()
 
             # Visualise results for debugging
             if args.mode == "Image" and DEBUGG:
@@ -170,7 +180,8 @@ def draw_landmarks_on_image(new_pose_world_landmarks_list, org_img_path, output_
     pose_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
     
     norm_landmarks = [
-        landmark_pb2.NormalizedLandmark(x=landmark['x'], y=landmark['y'], z=landmark['z']) for landmark in pose_landmarks_list
+        landmark_pb2.NormalizedLandmark(x=landmark['x'], y=landmark['y'], z=landmark['z']) for landmark in 
+        pose_landmarks_list
     ]
     pose_landmarks_proto.landmark.extend(norm_landmarks)
 
@@ -188,7 +199,7 @@ def draw_landmarks_on_image(new_pose_world_landmarks_list, org_img_path, output_
     # Add position text near each landmark.
     for landmark, world_landmark in zip(norm_landmarks, world_landmarks):
         x, y = int(landmark.x * annotated_image.shape[1]), int(landmark.y * annotated_image.shape[0])
-        cv2.putText(annotated_image, f'({world_landmark.x:.2f}, {world_landmark.y:.2f}, {world_landmark.z:.2f})', (x, y -20), 
+        cv2.putText(annotated_image, f'({world_landmark.x:.2f}, {world_landmark.y:.2f}, {world_landmark.z:.2f})', (x, y - 20), 
                     cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2) # 1.0 is font size, 2 is thickness
     
     bgr_image = cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR)
@@ -212,7 +223,6 @@ def create_necessary_folders(output_path):
     
     for subdir in subdirectories:
         ensure_folder(os.path.join(output_path, subdir))
-
 
 def main():
     parser = argparse.ArgumentParser()
