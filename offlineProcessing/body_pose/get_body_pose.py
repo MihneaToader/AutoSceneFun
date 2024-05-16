@@ -24,6 +24,9 @@ from utils import *
 
 class BodyPose():
     def __init__(self, media_path, model_path, output_folder, visualise=False, debugg=False, landmarks:str="landmark"):
+        
+        assert landmarks.lower() in ["landmark", "normalized_landmark"], "Invalid landmark type. Choose either 'landmark' or 'normalized_landmark'"
+        
         self.media_path = media_path
         self.model_path = model_path
         self.output_folder = output_folder
@@ -33,7 +36,7 @@ class BodyPose():
 
         self.filename = os.path.basename(self.media_path).split(".")[0]
 
-        self.landmarks = landmarks.lower() # Either "landmark" or "normalized_landmark"
+        self.landmark_type = landmarks.lower() # Either "landmark" or "normalized_landmark"
 
         self.creation_time = self._get_data_creation_date(self.media_path)
 
@@ -84,17 +87,19 @@ class BodyPose():
 
             # Save results to json file
             # World joint positions
-            if self.landmarks == "landmark":
+            if self.landmark_type == "landmark":
                 if results.pose_world_landmarks:
                     landmarks_dict = {
-                        str(self.creation_time): {'Landmark': {i: {
-                            'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence': lm.presence} for i, lm in enumerate(results.pose_world_landmarks[0])}}}
+                        "landmark_type": "Landmark",
+                        str(self.creation_time): {i: {
+                            'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence': lm.presence} for i, lm in enumerate(results.pose_world_landmarks[0])}}
 
-            elif self.landmarks == "normalized_landmark":
+            elif self.landmark_type == "normalized_landmark":
                 if results.pose_landmarks:
                     landmarks_dict = {
-                        str(self.creation_time): {'NormalizedLandmark':{i: 
-                            {'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for i, lm in enumerate(results.pose_landmarks[0])}}}
+                        "landmark_type": "NormalizedLandmark",
+                        str(self.creation_time): {i: 
+                            {'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for i, lm in enumerate(results.pose_landmarks[0])}}
 
             with open(self.output_path, 'w') as f:
                 json.dump(landmarks_dict, f, indent=4)
@@ -137,7 +142,7 @@ class BodyPose():
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(self.visualisation_output_path, fourcc, fps, (frame_width, frame_height))
 
-        pose_data = {}
+        pose_data = {"landmark_type": self.landmark_type}
 
         try:
              # Create PoseLandmarker object
@@ -177,17 +182,17 @@ class BodyPose():
                         global_timestamp = self.creation_time + timestamp_ms / 1000
 
                         # Usually landmarks are saved, not normalised landmarks
-                        if self.landmarks == "landmark":
+                        if self.landmark_type == "landmark":
                             if results.pose_world_landmarks:
-                                landmarks_dict = {'Landmark': {i: {
-                                    'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence': lm.presence} for i, lm in enumerate(results.pose_world_landmarks[0])}}
+                                landmarks_dict = {i: {
+                                    'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence': lm.presence} for i, lm in enumerate(results.pose_world_landmarks[0])}
                                 pose_data[f"{global_timestamp}"] = landmarks_dict
 
 
-                        elif self.landmarks == "normalized_landmark":
+                        elif self.landmark_type == "normalized_landmark":
                             if results.pose_landmarks:
-                                landmarks_dict = {'NormalizedLandmark': {i: {
-                                    'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence': lm.presence} for i, lm in enumerate(results.pose_landmarks[0])}}
+                                landmarks_dict = {i: {
+                                    'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence': lm.presence} for i, lm in enumerate(results.pose_landmarks[0])}
                                 pose_data[f"{global_timestamp}"] = landmarks_dict
 
 
