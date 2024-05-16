@@ -60,6 +60,9 @@ def process_data(args):
     processed_folder = os.path.join(args.output, "processed")
     debugg_folder = os.path.join(args.output, "debugg")
 
+    if args.mode.lower() == "video" and DEBUGG:
+        print("Debugging not supported for video.")
+
     # Check if --data is a folder, i.e. process all files in folder
     if os.path.isdir(args.data):
         # Iterate over all files in folder
@@ -93,16 +96,11 @@ def process_data(args):
                         org_img_path = os.path.join(DATA_DIR, "media", file_name + ".jpg")
                         p.debug_draw(org_img_path, debugg_output_path)
 
-                    elif args.mode == "Video" and DEBUGG:
-                        print("Debugging for video not supported")
-
                     # Save data
                     processed_data[timestamp] = p.pose_to_dict()
 
                 with open(output_path, 'w') as file:
                     json.dump(processed_data, file, indent=4)
-                    print(f"Processed data saved at {output_path}")
-
 
     # Data is single file
     elif os.path.isfile(args.data):
@@ -171,7 +169,7 @@ def main():
                         help="Choose mode [Image, Video]")
     parser.add_argument("-out", "--output", type=str, default=os.path.join(OUTPUT_DIR, "body_pose"),
                         help="Path to save output")
-    parser.add_argument("--debugg", type=bool, default=False, 
+    parser.add_argument("--debugg", action="store_true", 
                         help="Debugg mode")
     args = parser.parse_args()
 
