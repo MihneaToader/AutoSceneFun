@@ -20,6 +20,9 @@ offlineProcessing/.*
 offlineProcessing/models/*.task
 offlineProcessing/output/*
 
+# ignore any playground file
+*playground*
+
 
 # MemoryCaptures can get excessive in size.
 # They also could contain extremely sensitive data

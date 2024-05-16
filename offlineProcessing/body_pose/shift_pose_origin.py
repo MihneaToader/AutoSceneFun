@@ -4,11 +4,7 @@ import argparse
 import os
 
 # Visualisation
-import mediapipe as mp
-from mediapipe import solutions
-from mediapipe.framework.formats import landmark_pb2
-import numpy as np
-import cv2
+from body_pose.visualisation import draw_processed_landmarks_on_image
 
 from tqdm import tqdm
 
@@ -58,7 +54,7 @@ class Pose:
         return {'Landmark': {i: {'x': lm[0], 'y': lm[1], 'z': lm[2]} for i, lm in enumerate(self.joints)}}
     
     def debug_draw(self, org_img_path, output_path):
-        draw_landmarks_on_image(self.joints, org_img_path, output_path)
+        draw_processed_landmarks_on_image(self.joints, org_img_path, output_path)
 
     def __repr__(self):
         return f"Pose({', '.join(f'{name}={point}' for name, point in zip(self.joint_names, self.joints))})"
@@ -72,6 +68,9 @@ def process_data(args):
     processed_folder = os.path.join(args.output, "processed")
     debugg_folder = os.path.join(args.output, "debugg")
 
+    if args.mode.lower() == "video" and DEBUGG:
+        print("Debugging not supported for video.")
+
     # Check if --data is a folder, i.e. process all files in folder
     if os.path.isdir(args.data):
         # Iterate over all files in folder
@@ -81,7 +80,7 @@ def process_data(args):
                 file_path = os.path.join(args.data, file)
 
                 # Get output path
-                file_name = file.split('.')[0]
+                file_name = file[:file.rfind('.')]
                 output_path = os.path.join(processed_folder, file_name + "_p.json")
 
                 # Load data
@@ -103,19 +102,14 @@ def process_data(args):
                     # Visualise results for debugging
                     if args.mode == "Image" and DEBUGG and not is_video:
                         debugg_output_path = os.path.join(debugg_folder, file_name + f"_ann_debugg.jpg")
-                        org_img_path = os.path.join("data", file_name + ".jpg")
+                        org_img_path = os.path.join(DATA_DIR, "media", file_name + ".jpg")
                         p.debug_draw(org_img_path, debugg_output_path)
-
-                    elif args.mode == "Video" and DEBUGG:
-                        print("Debugging for video not supported")
 
                     # Save data
                     processed_data[timestamp] = p.pose_to_dict()
 
                 with open(output_path, 'w') as file:
                     json.dump(processed_data, file, indent=4)
-                    print(f"Processed data saved at {output_path}")
-
 
     # Data is single file
     elif os.path.isfile(args.data):
@@ -158,55 +152,7 @@ def process_data(args):
             json.dump(processed_data, file, indent=4)
             print(f"Processed data saved at {output_path}")
 
-
-def draw_landmarks_on_image(new_pose_world_landmarks_list, org_img_path, output_path):
-    """NOTE: WORKS FOR IMAGES ONLY!"""
-
-    # Load image
-    rgb_image = mp.Image.create_from_file(org_img_path)
-    
-    bgr_image = rgb_image.numpy_view()[:, :, :3]
-    annotated_image = np.copy(bgr_image)
-
-    org_img_name = os.path.splitext(os.path.basename(org_img_path))[0]
-
-    joints_path = os.path.join(OUTPUT_DIR, "body_pose", "debugg", "landmarks", f"{org_img_name}_landmarks.json")
-
-    with open(joints_path, 'r') as file:
-        joints = json.load(file)
-
-    pose_landmarks_list = joints.get("pose_landmarks")
-
-    pose_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
-    
-    norm_landmarks = [
-        landmark_pb2.NormalizedLandmark(x=landmark['x'], y=landmark['y'], z=landmark['z']) for landmark in 
-        pose_landmarks_list
-    ]
-    pose_landmarks_proto.landmark.extend(norm_landmarks)
-
-    solutions.drawing_utils.draw_landmarks(
-        annotated_image,
-        pose_landmarks_proto,
-        solutions.pose.POSE_CONNECTIONS,
-        solutions.drawing_styles.get_default_pose_landmarks_style())
-
-    # Get world landmarks for debugging
-    world_landmarks = [
-        landmark_pb2.Landmark(x=landmark[0], y=landmark[1], z=landmark[2]) for landmark in new_pose_world_landmarks_list
-    ]
-
-    # Add position text near each landmark.
-    for landmark, world_landmark in zip(norm_landmarks, world_landmarks):
-        x, y = int(landmark.x * annotated_image.shape[1]), int(landmark.y * annotated_image.shape[0])
-        cv2.putText(annotated_image, f'({world_landmark.x:.2f}, {world_landmark.y:.2f}, {world_landmark.z:.2f})', (x, y - 20), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2) # 1.0 is font size, 2 is thickness
-    
-    bgr_image = cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR)
-
-    cv2.imwrite(output_path, bgr_image)
-
-
+            
 def create_necessary_folders(output_path):
     # Function to create folder if it doesn't exist
     def ensure_folder(path):
@@ -232,7 +178,7 @@ def main():
                         help="Choose mode [Image, Video]")
     parser.add_argument("-out", "--output", type=str, default=os.path.join(OUTPUT_DIR, "body_pose"),
                         help="Path to save output")
-    parser.add_argument("--debugg", type=bool, default=False, 
+    parser.add_argument("--debugg", action="store_true", 
                         help="Debugg mode")
     args = parser.parse_args()
 

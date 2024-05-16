@@ -6,14 +6,14 @@ import datetime
 import json
 from PIL import Image
 
-# Visualisation
-from mediapipe import solutions
-from mediapipe.framework.formats import landmark_pb2
-import numpy as np
-import cv2
-from pymediainfo import MediaInfo
-# from google.colab.patches import cv2_imshow
+# Ignore warnings
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module='google.protobuf.symbol_database')
 
+
+# Visualisation
+from body_pose.visualisation import draw_landmarks_on_image
+import cv2
 
 from tqdm import tqdm
 import argparse
@@ -21,347 +21,289 @@ import os
 
 from utils import *
 
-def draw_landmarks_on_image(rgb_image, detection_result):
-    pose_landmarks_list = detection_result.pose_landmarks
-    annotated_image = np.copy(rgb_image)
 
-    # Get landmarks in world coords (debuggin)
-    pose_world_landmarks_list = detection_result.pose_world_landmarks
+class BodyPose():
+    def __init__(self, media_path, model_path, output_folder, visualise=False, debugg=False, landmarks:str="landmark"):
+        self.media_path = media_path
+        self.model_path = model_path
+        self.output_folder = output_folder
+        self.visualise = visualise
+        self.DEBUGG = debugg
+        self.mode = self._set_mode()
 
-    # Loop through the detected poses to visualize.
-    for pose_landmarks, pose_world_landmarks in zip(pose_landmarks_list, pose_world_landmarks_list):
-        pose_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
-        norm_landmarks = [
-            landmark_pb2.NormalizedLandmark(x=landmark.x, y=landmark.y, z=landmark.z) for landmark in pose_landmarks
-        ]
-        pose_landmarks_proto.landmark.extend(norm_landmarks)
-        solutions.drawing_utils.draw_landmarks(
-            annotated_image,
-            pose_landmarks_proto,
-            solutions.pose.POSE_CONNECTIONS,
-            solutions.drawing_styles.get_default_pose_landmarks_style())
+        self.filename = os.path.basename(self.media_path).split(".")[0]
 
-        world_landmarks = [
-            landmark_pb2.Landmark(x=landmark.x, y=landmark.y, z=landmark.z) for landmark in pose_world_landmarks
-        ]
+        self.landmarks = landmarks.lower() # Either "landmark" or "normalized_landmark"
 
-        # Add position text near each landmark.
-        for landmark, world_landmark in zip(norm_landmarks, world_landmarks):
-            x, y = int(landmark.x * annotated_image.shape[1]), int(landmark.y * annotated_image.shape[0])
-            cv2.putText(annotated_image, f'({world_landmark.x:.2f}, {world_landmark.y:.2f}, {world_landmark.z:.2f})', (x, y -20), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2) # 1.0 is font size, 2 is thickness
+        self.creation_time = self._get_data_creation_date(self.media_path)
+
+        # Generate necessary paths
+        self._set_paths()
+
+
+    def _set_paths(self):
+
+        self.output_path = os.path.join(self.output_folder, "raw", self.filename + ".json") # Output path for landmarks
+        self.debugg_output_path = os.path.join(self.output_folder, "debugg", "landmarks", self.filename + "_landmarks.json") # Output path for debugg landmarks
+
+        ending = ".jpg" if self.mode == "image" else ".mov"
+        self.visualisation_output_path = os.path.join(self.output_folder, "media", self.filename + "_ann" + ending) # Output path for visualisation
+
+
+    def _set_mode(self):
+        if self.media_path.lower().endswith(".jpg"):
+            mode = "image"
+        elif self.media_path.lower().endswith(".mov") or self.data.lower().endswith(".mp4"):
+            mode = "video"
+        else:
+            raise ValueError("Unsupported media type")
         
-    return annotated_image
+        return mode
 
-def get_body_pose_from_image(model_path, image, creation_time, output_path, image_name, visualise=False):
-    # Load model
-    BaseOptions = python.BaseOptions
-    PoseLandmarker = vision.PoseLandmarker
-    PoseLandmarkerOptions = vision.PoseLandmarkerOptions
-    VisionRunningMode = vision.RunningMode
+    def get_body_pose_from_image(self):
 
-    options = PoseLandmarkerOptions(
-        base_options=BaseOptions(model_asset_path=model_path),
-        running_mode=VisionRunningMode.IMAGE)
+        # Load image
+        image = mp.Image.create_from_file(self.media_path)
 
-    # Create PoseLandmarker object
-    with PoseLandmarker.create_from_options(options) as landmarker:
-        
-        # Process image
-        results = landmarker.detect(image)
+        # Load model
+        BaseOptions = python.BaseOptions
+        PoseLandmarker = vision.PoseLandmarker
+        PoseLandmarkerOptions = vision.PoseLandmarkerOptions
+        VisionRunningMode = vision.RunningMode
 
-        # Save results to json file
-        # World joint positions
-        if results.pose_world_landmarks:
-            landmarks_dict = {str(creation_time):{'Landmark':{i: {'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for i, lm in enumerate(results.pose_world_landmarks[0])}}}
-            with open(os.path.join(output_path, "raw", image_name + ".json"), 'w') as f:
+        options = PoseLandmarkerOptions(
+            base_options=BaseOptions(model_asset_path=self.model_path),
+            running_mode=VisionRunningMode.IMAGE)
+
+        # Create PoseLandmarker object
+        with PoseLandmarker.create_from_options(options) as landmarker:
+
+            # Process image
+            results = landmarker.detect(image)
+            landmarks_dict = {}
+
+            # Save results to json file
+            # World joint positions
+            if self.landmarks == "landmark":
+                if results.pose_world_landmarks:
+                    landmarks_dict = {
+                        str(self.creation_time): {'Landmark': {i: {
+                            'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence': lm.presence} for i, lm in enumerate(results.pose_world_landmarks[0])}}}
+
+            elif self.landmarks == "normalized_landmark":
+                if results.pose_landmarks:
+                    landmarks_dict = {
+                        str(self.creation_time): {'NormalizedLandmark':{i: 
+                            {'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for i, lm in enumerate(results.pose_landmarks[0])}}}
+
+            with open(self.output_path, 'w') as f:
                 json.dump(landmarks_dict, f, indent=4)
 
-        # Relative joint positions
-        # if results.pose_landmarks:
-        #     landmarks_dict = {'NormalizedLandmark':{i: {'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for i, lm in enumerate(results.pose_landmarks[0])}}
-        #     with open(os.path.join(output_path, "raw", image_name + ".json"), 'w') as f:
-        #         json.dump(landmarks_dict, f, indent=4)
-        
-        if DEBUGG:
-
-            # Split filename from output path
-            debugg_output_path = os.path.join(output_path, "debugg", "landmarks", image_name + "_landmarks.json")
-
-            results_dict = {"pose_landmarks": [{'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for lm in results.pose_landmarks[0]], 
-                            "pose_world_landmarks": [{'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for lm in results.pose_world_landmarks[0]]}
-
-            print(f'Saving landmarks to {debugg_output_path}')
-            with open(debugg_output_path, 'w') as file:
-                json.dump(results_dict, file, indent=4)
-
-        if visualise:
-            # Get rid of alpha (transparency) channel
-            bgr_image = image.numpy_view()[:, :, :3]
-            annotated_image = draw_landmarks_on_image(bgr_image, results)
-            # cv2.imshow(cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR))
+            if self.DEBUGG:
+                self._save_debug_landmarks(results)
             
-            # Convert RGB to BGR for displaying with OpenCV if necessary
-            bgr_image = cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR)
-            
-            # Save image
-            cv2.imwrite(os.path.join(output_path, "media", image_name + "_ann.jpg"), bgr_image)
+            if self.visualise:
+                self._visualise_results(image, results)
 
+    def get_body_pose_from_video(self, target_fps):
 
-def get_body_pose_from_video(model_path, video, output_path, video_name, starting_time, target_fps, visualise=False):
+        if self.DEBUGG:
+            print("Debugging not supported for videos")
 
-    # Read metadata from video
-    fps = video.get(cv2.CAP_PROP_FPS)
-    frame_width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
-    frame_height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        # Load video
+        video = cv2.VideoCapture(self.media_path)
 
-    # Load pose estimation model
-    options = vision.PoseLandmarkerOptions(
-        base_options=python.BaseOptions(model_asset_path=model_path),
-        running_mode=vision.RunningMode.VIDEO)
-    
-    # Calculate how man frames to skip
-    if target_fps == 0: target_fps = fps
-    skip_ratio = max(1, int(fps / target_fps))
-    fps = int(fps / skip_ratio)
-    frame_count = 0
+        # Load pose estimation model
+        fps = round(video.get(cv2.CAP_PROP_FPS))
+        frame_width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
+        frame_height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    # Create a tqdm progress bar
-    total_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT)) // skip_ratio
-    progress_bar = tqdm(total=total_frames, desc="Processing Video Frames")
+        options = vision.PoseLandmarkerOptions(
+            base_options=python.BaseOptions(model_asset_path=self.model_path),
+            running_mode=vision.RunningMode.VIDEO)
 
-    # Define the codec and create VideoWriter object
-    if visualise:
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # or 'XVID'
-        video_output_path = os.path.join(output_path, "media", video_name + "_ann.mov")
-        out = cv2.VideoWriter(video_output_path, fourcc, fps, (frame_width, frame_height))
-    
-    # Save joint positions
-    landmarks_file_path = os.path.join(output_path, "raw", video_name + ".json")
-    pose_data = {}
-    try:
-        # Create PoseLandmarker object
-        with vision.PoseLandmarker.create_from_options(options) as landmarker:
-            
-            # Iterate over each video frame
-            while video.isOpened():
-                ret, frame = video.read()
-                if not ret:
-                    break
+        # Calculate how man frames to skip
+        if target_fps == 0: target_fps = fps
+        skip_ratio = max(1, int(fps / target_fps))
+        fps = int(fps / skip_ratio)
+        frame_count = 0
 
-                # Skip frames if necessary
-                if frame_count % skip_ratio == 0:
+        # Create a tqdm progress bar
+        total_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT)) // skip_ratio
+        progress_bar = tqdm(total=total_frames, desc="Processing Video Frames")
 
-                    # Update the progress bar
-                    progress_bar.update(1)
+        # Define the codec and create VideoWriter object
+        if self.visualise:
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(self.visualisation_output_path, fourcc, fps, (frame_width, frame_height))
+
+        pose_data = {}
+
+        try:
+             # Create PoseLandmarker object
+            with vision.PoseLandmarker.create_from_options(options) as landmarker:
+                
+                # Iterate over each video frame
+                while video.isOpened():
+                    ret, frame = video.read()
+                    if not ret:
+                        break
                     
+                    # Skip frames if necessary
+                    if frame_count % skip_ratio == 0:
 
-                    # Convert BGR to RGB
-                    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        # Update the progress bar
+                        progress_bar.update(1)
 
-                    # Convert to MediaPipe Image format
-                    mp_frame = mp.Image(data=rgb_frame, image_format=mp.ImageFormat.SRGB)
+                        # Convert BGR to RGB
+                        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-                    # Calculate timestamp in milliseconds (make sure it's non-negative)
-                    timestamp_ms = int(video.get(cv2.CAP_PROP_POS_MSEC))
-                    if timestamp_ms < 0:
-                        timestamp_ms = 0  # Reset to zero if negative
+                        # Convert to MediaPipe Image format
+                        mp_frame = mp.Image(data=rgb_frame, image_format=mp.ImageFormat.SRGB)
 
-                    # Process the frame through MediaPipe
-                    try:
-                        results = landmarker.detect_for_video(mp_frame, timestamp_ms=timestamp_ms)
-                    except Exception as e:
-                        print(f"Error processing frame with timestamp {timestamp_ms}: {e}")
-                        continue
-                    
-                    # Save data with global timestamp as key
-                    global_timestamp = starting_time + datetime.timedelta(milliseconds=timestamp_ms)
-                    global_timestamp = global_timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                        # Calculate timestamp in milliseconds (make sure it's non-negative)
+                        timestamp_ms = int(video.get(cv2.CAP_PROP_POS_MSEC))
+                        if timestamp_ms < 0:
+                            timestamp_ms = 0
 
-                    # if results.pose_landmarks: # world coord are found under results.pose_world_landmarks
-                    #     landmarks_dict = {'NormalizedLandmark':{i: {'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for i, lm in enumerate(results.pose_landmarks[0])}}
-                    #     pose_data[global_timestamp] = landmarks_dict
-                    if results.pose_world_landmarks: # world coord are found under results.pose_world_landmarks
-                        landmarks_dict = {'Landmark':{i: {'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for i, lm in enumerate(results.pose_world_landmarks[0])}}
-                        pose_data[global_timestamp] = landmarks_dict
-
-
-                    if visualise and results.pose_landmarks:
-                        annotated_image = draw_landmarks_on_image(rgb_frame, results)
-                        bgr_annotated_image = cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR)
-                        out.write(bgr_annotated_image)
-                        # cv2.imshow('Annotated Frame', bgr_annotated_image)
-                        # if cv2.waitKey(1) & 0xFF == ord('q'):
-                        #     break
-
-                frame_count += 1
-    
-    finally:
-        # Close progress bar on any exit
-        progress_bar.close()
-        video.release()
-        if visualise:
-            print("Saving video to: ", video_output_path)
-            out.release()
-        # cv2.destroyAllWindows()
-
-        with open(landmarks_file_path, 'w') as f:
-            json.dump(pose_data, f, indent=4)
-
-
-
-import datetime
-from PIL import Image
-from pymediainfo import MediaInfo
-
-def get_data_creation_date(data_path):
-    """Get creation time of video from metadata, including milliseconds if available."""
-
-    # Account for videos
-    if data_path.lower().endswith(('.mp4', '.mov')):
-        media_info = MediaInfo.parse(data_path)
-        for track in media_info.tracks:
-            if track.track_type == "Video":
-                creation_time_str = track.encoded_date
-                # Adjust format to possibly include milliseconds
-                formats = ["%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"]  # Added format with %f for milliseconds
-                for fmt in formats:
-                    try:
-                        creation_time = datetime.datetime.strptime(creation_time_str.replace(' UTC', ''), fmt)
-                        return creation_time
-                    except ValueError:
-                        continue
-                print("Warning: Creation time not found in video metadata or does not match expected format.")
-                return None
-
-    # Get image creation date
-    elif data_path.lower().endswith(('.jpg', '.jpeg')):
-        with Image.open(data_path) as img:
-            exif_data = img._getexif()
-            if exif_data:
-                datetime_org = exif_data.get(36867)  # DateTimeOriginal tag
-                if datetime_org:
-                    formats = ["%Y:%m:%d %H:%M:%S.%f", "%Y:%m:%d %H:%M:%S"]  # Added format with %f for milliseconds
-                    for fmt in formats: # Try to get milliseconds
+                        # Process the frame through MediaPipe
                         try:
-                            creation_time = datetime.datetime.strptime(datetime_org, fmt)
-                            return creation_time
-                        except ValueError:
+                            results = landmarker.detect_for_video(mp_frame, timestamp_ms=timestamp_ms)
+                        except Exception as e:
+                            print(f"Error processing frame with timestamp {timestamp_ms}: {e}")
                             continue
+                        
+                        # Save data with global timestamp as key
+                        global_timestamp = self.creation_time + timestamp_ms / 1000
 
-    else:
-        print("Warning: Unsupported media type.")
-        return None
+                        # Usually landmarks are saved, not normalised landmarks
+                        if self.landmarks == "landmark":
+                            if results.pose_world_landmarks:
+                                landmarks_dict = {'Landmark': {i: {
+                                    'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence': lm.presence} for i, lm in enumerate(results.pose_world_landmarks[0])}}
+                                pose_data[f"{global_timestamp}"] = landmarks_dict
+
+
+                        elif self.landmarks == "normalized_landmark":
+                            if results.pose_landmarks:
+                                landmarks_dict = {'NormalizedLandmark': {i: {
+                                    'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence': lm.presence} for i, lm in enumerate(results.pose_landmarks[0])}}
+                                pose_data[f"{global_timestamp}"] = landmarks_dict
+
+
+                        if self.visualise and results.pose_landmarks:
+                            annotated_image = draw_landmarks_on_image(rgb_frame, results)
+                            bgr_annotated_image = cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR)
+                            out.write(bgr_annotated_image)
+
+                    frame_count += 1
+
+        finally:
+            progress_bar.close()
+            video.release()
+            if self.visualise:
+                print("Saving video to: ", self.visualisation_output_path)
+                out.release()
+
+            with open(self.output_path, 'w') as f:
+                json.dump(pose_data, f, indent=4)
+
+    def _save_debug_landmarks(self, results):
+
+        results_dict = {
+            "pose_landmarks": [{'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence': lm.presence} for lm in results.pose_landmarks[0]],
+            "pose_world_landmarks": [{'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence': lm.presence} for lm in results.pose_world_landmarks[0]]}
+        
+        print(f'Saving landmarks to {self.debugg_output_path}')
+        with open(self.debugg_output_path, 'w') as file:
+            json.dump(results_dict, file, indent=4)
+
+    def _visualise_results(self, image, results):
+        # Get rid of alpha (transparency) channel
+        bgr_image = image.numpy_view()[:, :, :3]
+        annotated_image = draw_landmarks_on_image(bgr_image, results)
+
+        # Convert RGB to BGR for displaying with OpenCV if necessary
+        bgr_image = cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR)
+
+        # Save image
+        cv2.imwrite(self.visualisation_output_path, bgr_image)
+
+    @staticmethod
+    def _get_data_creation_date(data_path):
+        try:
+            timestamp = os.stat(data_path).st_birthtime
+            return timestamp
+        except Exception as e:
+            print(f"Warning: Cannot read metadata from {data_path}.")
+            return None
+
+    def _process_data(self, set_fps=0):
+        if self.mode == "image":
+            self.get_body_pose_from_image()
+        elif self.mode == "video":
+            self.get_body_pose_from_video(set_fps)
+        else:
+            raise ValueError(f"Unsupported mode: {self.mode}")
+
+def _create_necessary_folders(output_path, debugg=False):
+        # Function to create folder if it doesn't exist
+        def ensure_folder(path):
+            if not os.path.exists(path):
+                os.makedirs(path)
+
+        # Ensure the base output path exists
+        ensure_folder(output_path)
+
+        # Create subdirectories
+        subdirectories = ["media", "raw"]
+        if debugg:
+            subdirectories.append("debugg")
+            subdirectories.append("debugg/landmarks")
+
+        for subdir in subdirectories:
+            ensure_folder(os.path.join(output_path, subdir))   
 
 
 def process_data(args):
-    """Process data based on mode"""
+    if os.path.isdir(args.data):
+        if args.mode.lower() == "video":
+            data = [i for i in os.listdir(args.data) if i.lower().endswith(".mov") or i.lower().endswith(".mp4")]
+        elif args.mode.lower() == "image":
+            data = [i for i in os.listdir(args.data) if i.lower().endswith(".jpg")]
+        
+    elif {os.path.isfile(args.data) 
+          and args.data.lower().endswith(".jpg") 
+          or args.data.lower().endswith(".mov") 
+          or args.data.lower().endswith(".mp4")}:
+        data = [args.data]
 
-    # Account for images
-    if args.mode.lower() == "image":
-        # Load all images in folder
-        if os.path.isdir(args.data):
-            images = [i for i in os.listdir(args.data) if i.endswith(".jpg")]
-            for image in images:
-                image_path = os.path.join(args.data, image)
-                i = mp.Image.create_from_file(image_path)
-                creation_time = get_data_creation_date(image_path)
-                get_body_pose_from_image(model_path=args.model, image=i, creation_time=creation_time, visualise=args.visualise, output_path=args.output, image_name=image.split(".")[0])
-        
-        # If only single image is given
-        elif os.path.isfile(args.data):
-            i = mp.Image.create_from_file(args.data)
-            
-            # Get image name
-            image = args.data.split("/")[-1]
-            creation_time = get_data_creation_date(args.data)
-            get_body_pose_from_image(model_path=args.model, image=i, creation_time=creation_time, visualise=args.visualise, output_path=args.output, image_name=image.split(".")[0])
-        
-        else:
-            raise ValueError("Invalid path provided for video data")
-        
-    # Account for videos
-    elif args.mode.lower() == "video":
-        # Process whole folder
-        if os.path.isdir(args.data):
-            # Isolate videos in folder
-            videos = [v for v in os.listdir(args.data) if v.endswith(".mov") or v.endswith(".mp4")]
-            for video in videos:
-                video_path = os.path.join(args.data, video)
-                v = cv2.VideoCapture(video_path)
-                
-                # Check if video is opened
-                if not v.isOpened():
-                    raise IOError("Cannot open video: " + os.path.join(args.data, video))
-                
-                creation_time = get_data_creation_date(video_path)
-                new_video_name = str(creation_time)
-                get_body_pose_from_video(model_path=args.model, video=v, visualise=args.visualise, output_path=args.output, video_name=new_video_name, starting_time=creation_time, target_fps=args.set_fps)
-        # Process single video
-        elif os.path.isfile(args.data):
-            v = cv2.VideoCapture(args.data)
-            
-            # Check if video is opened
-            if not v.isOpened():
-                raise IOError("Cannot open video: " + args.data)
-            
-            creation_time = get_data_creation_date(args.data)
-            new_video_name = str(creation_time)
-            get_body_pose_from_video(model_path=args.model, video=v, visualise=args.visualise, output_path=args.output, video_name=new_video_name, starting_time=creation_time, target_fps=args.set_fps)
-        
-        else:
-            raise ValueError("Invalid path provided for video data")
-        
-def create_necessary_folders(output_path):
-    # Function to create folder if it doesn't exist
-    def ensure_folder(path):
-        if not os.path.exists(path):
-            os.makedirs(path)
-
-    # Ensure the base output path exists
-    ensure_folder(output_path)
-
-    # Create subdirectories
-    subdirectories = ["media", "raw"]
-    if DEBUGG:
-        subdirectories.append("debugg")
-        subdirectories.append("debugg/landmarks")
+    else:
+        raise ValueError("Invalid path provided for data")
     
-    for subdir in subdirectories:
-        ensure_folder(os.path.join(output_path, subdir))
-
+    # Process images
+    for d in data:
+        image_path = os.path.join(args.data, d)
+        body_pose = BodyPose(image_path, args.model, args.output, args.visualise, args.debugg)
+        body_pose._process_data(args.set_fps)
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-m", "--mode", type=str, default="Video", 
-                        help="Generate pose from [Image, Video, Stream]")
-    parser.add_argument("--model", type=str, default=os.path.join(MODELS_DIR, "pose_landmarker_lite.task"), 
-                        help="Path to model")
-    parser.add_argument("-d", "--data", type=str, default=DATA_DIR, 
-                        help="Path to image, video or stream data folder")
-    parser.add_argument("-v", "--visualise", type=bool, default=False, 
-                        help="Visualise results")
-    parser.add_argument("-out", "--output", type=str, default=os.path.join(OUTPUT_DIR, "body_pose"),
-                        help="Path to save output")
-    parser.add_argument("-sf", "--set_fps", type=int, default=0, 
-                        help="Set fps for video processing, 0 for original fps")
-    parser.add_argument("--debugg", type=bool, default=False, 
-                        help="Debugg mode")
+    parser.add_argument("-m", "--mode", type=str, default="Video", help="Generate pose from [Image, Video, Stream]")
+    parser.add_argument("--model", type=str, default=os.path.join(MODELS_DIR, "pose_landmarker_heavy.task"), help="Path to model")
+    parser.add_argument("-d", "--data", type=str, default=os.path.join(DATA_DIR, "media"), help="Path to image, video or stream data folder")
+    parser.add_argument("-v", "--visualise", action="store_true", help="Visualise results")
+    parser.add_argument("-out", "--output", type=str, default=os.path.join(OUTPUT_DIR, "body_pose"), help="Path to save output")
+    parser.add_argument("-sf", "--set_fps", type=int, default=0, help="Set fps for video processing, 0 for original fps")
+    parser.add_argument("--debugg", action="store_true", help="Debug mode")
     args = parser.parse_args()
 
-    # Raise warning if mode not supported
     if args.mode.lower() not in ["image", "video"]:
         raise ValueError(f"{args.mode} not supported. Video and Stream to be implemented")
-    
-    # if args.mode.lower() == "image":
-    #     print("Warning: Output joint positions is not implemented. Only visualisation available.")
-    
-    global DEBUGG # Make DEBUGG a global variable
-    DEBUGG = args.debugg
 
-    create_necessary_folders(args.output)
-    
+    _create_necessary_folders(args.output, args.debugg)
+
     process_data(args)
-    
+
 if __name__ == "__main__":
     main()
