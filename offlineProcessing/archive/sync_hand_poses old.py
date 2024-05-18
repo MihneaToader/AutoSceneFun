@@ -18,7 +18,6 @@ from body_pose.visualisation import plot_hand_projections
 
 
 # TODO: output processed data starting at common timestamp t
-# TODO: (OPTIONAL) update match_data_around_d in a way that it chooses the right t based on the average distance after processing
 
 def _format_meta_data(data) -> json:
     """
@@ -70,196 +69,143 @@ def _format_meta_data(data) -> json:
 
     return new_dataset
 
+def _get_data_creation_date(data_path):
+    """(Helper function) Get creation time of video from metadata, including milliseconds if available."""
 
-def _calculate_distance(coord1:np.array, coord2:np.array):
+    try:  
+        timestamp = os.stat(data_path).st_birthtime
+
+        return timestamp
+    
+    except Exception as e:
+        print("Warning: Unsupported media type.")
+        return None
+    
+def _dict_to_numpy(data):
+    """(Helper function) Converts a dictionary of coordinates to a NumPy array."""
+    coordinates = []
+    for key, coords in data.items():
+        # Ensure 'x', 'y', 'z' are in the coords dictionary
+        if all(k in coords for k in ['x', 'y', 'z']):
+            coordinates.append((coords['x'], coords['y'], coords['z']))
+    
+    # Convert list of tuples to a NumPy array
+    return np.array(coordinates)
+
+def _calculate_distance(coord1, coord2):
     """(Helper function) Calculate the Euclidean distance between two 3D points."""
-    return np.linalg.norm(coord1 - coord2)
+    return math.sqrt((coord1['x'] - coord2['x']) ** 2 + 
+                     (coord1['y'] - coord2['y']) ** 2 + 
+                     (coord1['z'] - coord2['z']) ** 2)
 
-def _get_data_at_t(data, t):
-    return {t: data[str(t)]}
-
-def get_data_around_t(data:dict, timestamp) -> dict:
+def get_metaquest_data_at_t(data_metaquest, t):
     """
     Returns data +- 1 sec around a specific timestamp
     """
     # Find the index of the timestamp
     one_second = 1  # One second in terms of timestamp units
-    data_around_t = {}
+    data_at_t = []
 
     # Early exit if the timestamp is out of the range of the data
-    if data:
-        timestamps = list(data.keys())
-        min_time = timestamps[0]
-        max_time = timestamps[-1]
-        if timestamp < min_time - one_second or timestamp > max_time + one_second:
+    if data_metaquest:
+        min_time = data_metaquest[0]["Timestamp"]
+        max_time = data_metaquest[-1]["Timestamp"]
+        if t < min_time - one_second or t > max_time + one_second:
             print("Timestamp out of range")
-            return data_around_t
+            return data_at_t
 
     # Iterate through each entry and check if it's within the ±1 second range
-    for t, d in data.items():
-        if timestamp - one_second <= t <= timestamp + one_second:
-            data_around_t[t] = d
+    for entry in data_metaquest:
+        if t - one_second <= entry["Timestamp"] <= t + one_second:
+            data_at_t.append(entry)
 
-    return data_around_t
+    return data_at_t
 
-def get_first_common_t(data1:dict, data2:dict, delta_ms) -> tuple:
-    """
-    Returns first common timestamp within threshold delta_ms.
-    
-    :return: (t1, t2) or None if no common timestamp is found.
-    """
+def get_bodypose_data_at_t(data_bodypose, t):
+    return data_bodypose[str(t)]
 
-    # Convert delta to seconds
+def get_first_common_t(data_metaquest, data_bodypose, delta_ms):
+    """Returns first common timestamp within threshold delta_ms."""
+
     delta_ms = delta_ms/1000
 
     # Iterate through each timestamp in the first dataset
-    for t1 in data1.keys():
+    for entry1 in data_metaquest:
+        t_meta = entry1['Timestamp']
+
         # Check each timestamp in the second dataset
-        for t2 in data2.keys():
+        for t_body in data_bodypose.keys():
             # Compare the timestamps within the allowed delta
-            if abs(float(t1) - float(t2)) <= delta_ms:
-                return float(t1), float(t2)
+            if abs(t_meta - float(t_body)) <= delta_ms:
+                return t_meta, t_body
 
     return None
 
-def _dict_to_numpy(data:dict):
-    """(Helper function) Converts a dictionary of coordinates to a NumPy array."""
-    coordinates = []
-
-    for coords in data.values():
-        coordinates.append((coords['x'], coords['y'], coords['z']))
-    
-    # Convert list of tuples to a NumPy array
-    return np.array(coordinates)
-
-
-def get_relevant_data(data:dict):
+def get_matching_timestamps_from_t(data_metaquest, data_bodypose, first_common_t, delta):
     """
-    Returns only the relevant data for the transformation.
-    """
-    def _is_bodypose_data(d): # Helper function
-        try:
-            int(d)
-            return True
-        except ValueError:
-            return False
-    
-    # Check if data is bodypose or metaquest
-    is_bodypose = _is_bodypose_data(next(iter(data[next(iter(data))])))
+    Match data to the nearest target time.
 
-    if is_bodypose:
-        rel_data = {}
-        for t, d in data.items():
-            # Only keep left of hand data
-            rel_data[t] = {key: value for key, value in d.items() if key in ['15', '17', '19']}
-
-        return rel_data
-
-    else:
-        rel_data = {}
-        for t, d in data.items():
-            # Only keep left of hand data
-            rel_data[t] = {key: value for key, value in d.items() if key in ['Wrist', 'Hand_PinkyProximal', 'Hand_MiddleProximal']}
-        
-        return rel_data
-
-
-def sync_data(data_bodypose:dict, data_lefthand:dict, t_start_bodypose, t_start_lefthand):
-    """
-    Sets datasets into same time frame, starting from the first common timestamp
-
-    :return: (data_bodypose, data_lefthand)
+    retunrs: List[tuple(t_metaquest, t_bodypose)]
     """
 
-    # Sychronise starts of data
-    data_bodypose = {t: d for t, d in data_bodypose.items() if float(t) >= t_start_bodypose}
-    data_lefthand = {t: d for t, d in data_lefthand.items() if float(t) >= t_start_lefthand}
-
-    # Add difference of timestamps to bodypose timestamps to synchronise start
-    delta_t = t_start_lefthand - t_start_bodypose
-    new_data_bodypose = {round(1000*(float(t) + delta_t))/1000: d for t, d in data_bodypose.items()}
-
-    return new_data_bodypose, data_lefthand
-
-
-def match_data(data_lefthand:dict, data_bodypose:dict, delta_ms):
-    """
-    Finds point in time in both datasets where points are closest.
-    
-    :return: (data_lefthand, data_bodypose)
-    """
-    # NOTE: THIS CODE MIGHT BE PRONE TO ROTATIONS!!!
-
-    # Goal is to find the first common timestamp of the two datasets
-    # Common timestamp = first datapoint of bodypose and metaquest that are within delta_ms of each other
-    first_t_meta, first_t_body = get_first_common_t(data_lefthand, data_bodypose, delta_ms)
-
-    # Get data at first common timestamp
-    # MetaQuest data is gathered around 1 sec before and after the timestamp
-    # This is due to the exact timestamp of the MetaQuest (bodypose only second precision)
-    metaquest_data_at_t = get_data_around_t(data_lefthand, first_t_meta)
-    body_pose_data_at_t = _get_data_at_t(data_bodypose, first_t_body)
-
-    r_meta_lefthand = get_relevant_data(metaquest_data_at_t)
-    r_bodypose = get_relevant_data(body_pose_data_at_t)
-
-    # Plan: transform data1 to data2 and calculate the distance for each timestamp
-    # Return data for which distance is minimal
-    distances = []
-
-    for t2, d2 in r_bodypose.items():
-        for t1, d1 in r_meta_lefthand.items():
-            # Convert dictionaries to numpy arrays
-            np_d1 = _dict_to_numpy(d1)
-            np_d2 = _dict_to_numpy(d2)
-
-            # Calculate the optimal rotation matrix, scaling factor, and translation vector
-            R, scale, t = kabsch_scaling(np_d1, np_d2)
-
-            transformed_d1 = transform_points(np_d1, R, scale, t)
-
-            distances.append((_calculate_distance(transformed_d1, np_d2), t1, t2))
-
-    # Find the minimum distance
-    min_distance, closest_t_meta, closest_t_body = min(distances, key=lambda x: x[0])
-    print(f"Min distance: {min_distance} at t_meta: {closest_t_meta} and t_body: {closest_t_body}")
-
-    data_bodypose, data_lefthand = sync_data(data_bodypose, data_lefthand, closest_t_body, closest_t_meta)
-
-    return data_lefthand, data_bodypose
-
-
-def align_data(data1, data2, delta_ms):
-    """
-    Aligns two datasets based on their timestamps. Outputs datasets with common timestamps and same length.
-
-    retunrs: List[tuple(t_metaquest, t_bodypose)], List[time_diff]
-    """
-
-    # First timestamp is already synchronised
-    t1_list = [float(t) for t in data1.keys()]
-    t2_list = [float(t) for t in data2.keys()]
+    t_bodypose = [float(t) for t in data_bodypose.keys() if float(t) >= first_common_t]
+    t_metaquest = [entry['Timestamp'] for entry in data_metaquest if entry['Timestamp'] >= first_common_t]
 
     reg_idx = 0
-    new_data1 = {}
-    new_data2 = {}
+    matched_results = []
     t_diff = []
 
     # Loop through the irregular timestamps and match to the nearest target time
-    for t1 in t1_list:
+    for t_meta in t_metaquest:
         # Advance the regular index to find the closest regular timestamp
-        while reg_idx < len(t2_list) - 1 and abs(t2_list[reg_idx + 1] - t1) < abs(t2_list[reg_idx] - t1):
+        while reg_idx < len(t_bodypose) - 1 and abs(t_bodypose[reg_idx + 1] - t_meta) < abs(t_bodypose[reg_idx] - t_meta):
             reg_idx += 1
 
-        if reg_idx < len(t2_list) and abs(t2_list[reg_idx] - t1) <= delta_ms/1000:
-            # Keep only data points that are within the delta_ms threshold
-            new_data1[t1] = data1[t1]
-            new_data2[t2_list[reg_idx]] = data2[t2_list[reg_idx]]
+        if reg_idx < len(t_bodypose) and abs(t_bodypose[reg_idx] - t_meta) <= delta/1000:
+            matched_results.append((t_meta, t_bodypose[reg_idx]))
             
             # Keep track of time differences
-            t_diff.append(abs(t2_list[reg_idx] - t1))
+            t_diff.append(abs(t_bodypose[reg_idx] - t_meta))       
     
-    return new_data1, new_data2, t_diff
+    return matched_results, t_diff
+
+
+def get_optimal_meta_timestamp(data_metaquest, data_bodypose):
+    """
+    Finds the timestamp in the detailed dataset that has the closest match to the simple dataset.
+    
+    :return: (Closest timestamp meta, relevant meta data, min distance)
+    """
+
+    # NOTE: THIS CODE MIGHT BE PRONE TO ROTATIONS!!!
+
+    min_distance = float('inf')
+    closest_timestamp_meta = None
+    rel_meta_data = {}
+
+    # Joint mapping based on assumed similarity or logical match
+    joint_mapping = {
+        '16': 'Wrist',  # Example mapping, adjust according to actual joint correspondence
+        '18': 'Hand_PinkyProximal',  # Assuming you map these based on your knowledge of the datasets
+        '20': 'Hand_MiddleProximal',
+    }
+
+    for entry in data_metaquest:
+        total_distance = 0
+        for simple_key, detailed_key in joint_mapping.items():
+            if detailed_key in entry['Position_rotation']:
+                total_distance += _calculate_distance(data_bodypose[simple_key], entry['Position_rotation'][detailed_key])
+        
+        if total_distance < min_distance:
+            min_distance = total_distance
+            closest_timestamp_meta = entry['Timestamp']
+            rel_meta_data = {simple_key: entry['Position_rotation'][joint_mapping[simple_key]] for simple_key in joint_mapping.keys()}
+
+
+    return closest_timestamp_meta, rel_meta_data, min_distance
+
+
+
 
 
 def kabsch_scaling(points_metaquest, points_bodypose):
@@ -341,51 +287,71 @@ def process_data(meta_data_path, body_pose_path, output_path, delta_ms=30):
     # Step 2: Synchronize the data
     # ============================
 
-    data_lefthand, data_bodypose = match_data(data_lefthand, data_bodypose, delta_ms)
+    # Goal is to find the first common timestamp of the two datasets
+    # Common timestamp = first datapoint of bodypose and metaquest that are within delta_ms of each other
+    first_t_meta, first_t_body = get_first_common_t(data_lefthand, data_bodypose, delta_ms)
 
-    data_lefthand, data_bodypose, differences = align_data(data_lefthand, data_bodypose, delta_ms)
+    # Get data at first common timestamp
+    # MetaQuest data is gathered around 1 sec before and after the timestamp
+    # This is due to the exact timestamp of the MetaQuest (bodypose only second precision)
+    metaquest_data_at_t = get_metaquest_data_at_t(data_lefthand, first_t_meta)
+    body_pose_data_at_t = get_bodypose_data_at_t(data_bodypose, first_t_body)
 
-    print(f"mean time difference: {np.mean(differences)}")
+    
+    # Get timestamp of MetaQuest data that is closest to the bodypose data (min. distance of relevant joints)
+    closest_t_meta, relevant_meta_data, _ = get_optimal_meta_timestamp(metaquest_data_at_t, body_pose_data_at_t)
+    # print(f"Best matching MetaQuest timestamp around first common timestamp: {closest_t_meta} with min_distance: {min_distance}")
 
     # Isolate timestamps of common data points (within delta_ms of each other), starting from the first common timestamp
-    # common_t, _ = get_matching_timestamps_from_t(data_lefthand, data_bodypose, t_meta, delta_ms)
+    # TODO: IS FIRST COMMON TIMESTAMP INCLUDED IN COMMON T?
+    common_t, _ = get_matching_timestamps_from_t(data_lefthand, data_bodypose, closest_t_meta, delta_ms)
 
     # for debugging
     db = []
     da = []
 
     # Iterate over all common timestamps and calculate the optimal transformation
-    for idx, ((t_lefthand, d_lefthand), (t_bodypose, d_bodypose)) in enumerate(zip(data_lefthand.items(), data_bodypose.items())):
+    for idx, (t_meta, t_body) in enumerate(common_t):
 
-        rel_data_lefthand = get_relevant_data({t_lefthand: d_lefthand})
-        rel_data_bodypose = get_relevant_data({t_bodypose: d_bodypose})
+        metaquest_data_at_t = get_metaquest_data_at_t(data_lefthand, t_meta)
+        body_pose_data_at_t = get_bodypose_data_at_t(data_bodypose, t_body)
+
+        _, relevant_meta_data, _ = get_optimal_meta_timestamp(metaquest_data_at_t, body_pose_data_at_t)
 
         # ================================
         # Step 3: Calculate transformation
         # ================================
+
+        # 15: left_Wrist, 17: left_Hand_PinkyProximal, 19: Hand_MiddleProximal
+        # only keep left hand data of bodypose = keep keys of list
+        relevant_bodypose_data_at_t = {key: value for key, value in body_pose_data_at_t.items() if key in ['15', '17', '19']}
         
         # Convert dictionaries to numpy arrays
+        np_relevant_meta_data = _dict_to_numpy(relevant_meta_data)
+        np_relevant_bodypose_data = _dict_to_numpy(relevant_bodypose_data_at_t)
 
-        np_rel_data_lefthand = _dict_to_numpy(next(iter(rel_data_lefthand.values())))
-        np_rel_data_bodypose = _dict_to_numpy(next(iter(rel_data_bodypose.values())))
+        # print("Before transformation distances:", np.linalg.norm(np_relevant_meta_data - np_relevant_bodypose_data, axis=1))
 
         # Calculate the optimal rotation matrix, scaling factor, and translation vector
-        R, scale, t = kabsch_scaling(np_rel_data_lefthand, np_rel_data_bodypose)
+        R, scale, t = kabsch_scaling(np_relevant_meta_data, np_relevant_bodypose_data)
 
-        transformed_rel_data_bodypose = transform_points(np_rel_data_bodypose, R, scale, t)
+        # print(f"Rotation matrix:\n{R}")
+        # print(f"Scaling factor: {scale}")
+        # print(f"Translation vector: {t}")
+
+        transformed_bodypose_data = transform_points(np_relevant_bodypose_data, R, scale, t)
 
         # if idx == 0:
-            # plot_hand_projections(np_rel_data_lefthand, np_rel_data_bodypose, transformed_rel_data_bodypose)
+        #     plot_hand_projections(np_relevant_meta_data, np_relevant_bodypose_data, transformed_bodypose_data)
 
-
-        transformed_data_bodypose = transform_points(_dict_to_numpy(d_bodypose), R, scale, t)
+        # print("After transformation distances:", np.linalg.norm(np_rel_meta_data - transformed_body_pose_data, axis=1))
 
         # ====================================
         # (DEBUGGING) Calculate mean distances
         # ====================================
 
-        distances_before = np.abs(np_rel_data_lefthand - np_rel_data_bodypose)
-        distances_after = np.abs(np_rel_data_lefthand - transformed_rel_data_bodypose)
+        distances_before = np.abs(np_relevant_meta_data - np_relevant_bodypose_data)
+        distances_after = np.abs(np_relevant_meta_data - transformed_bodypose_data)
 
         db.append(distances_before)
         da.append(distances_after)

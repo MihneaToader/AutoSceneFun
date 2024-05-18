@@ -85,7 +85,7 @@ def process_data(args):
                 with open(file_path, 'r') as f:
                     data = json.load(f)
                     # Check if correct landmark type
-                    assert data['landmark_type'].lower() == 'landmark', f"Landmark type is not 'landmark' but {d['landmark_type']}. This script only supports world poses."
+                    assert data['landmark_type'].lower() == 'landmark', f"Landmark type is not 'landmark' but {data['landmark_type']}. This script only supports world poses."
 
                     data.pop('landmark_type')
 
@@ -135,7 +135,7 @@ def process_data(args):
             data = json.load(f)
 
             # Check if correct landmark type
-            assert data['landmark_type'].lower() == 'landmark', f"Landmark type is not 'landmark' but {d['landmark_type']}. This script only supports world poses."
+            assert data['landmark_type'].lower() == 'landmark', f"Landmark type is not 'landmark' but {data['landmark_type']}. This script only supports world poses."
 
             data.pop('landmark_type')
 

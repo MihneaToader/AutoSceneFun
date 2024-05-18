@@ -4,6 +4,7 @@ from mediapipe.framework.formats import landmark_pb2
 import numpy as np
 import cv2
 import os
+import matplotlib.pyplot as plt
 # from google.colab.patches import cv2_imshow
 
 from utils import OUTPUT_DIR
@@ -88,3 +89,27 @@ def draw_processed_landmarks_on_image(new_pose_world_landmarks_list, org_img_pat
     bgr_image = cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR)
 
     cv2.imwrite(output_path, bgr_image)
+
+
+# Used in sync_hand_poses.py to visualise hands after transformation
+def plot_hand_projections(np_relevant_meta_data, np_relevant_bodypose_data, transformed_bodypose_data):
+    """(Helper function)"""
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    # Plot MetaQuest data
+    ax.scatter(np_relevant_meta_data[:, 0], np_relevant_meta_data[:, 1], np_relevant_meta_data[:, 2], c='r', label='MetaQuest Data')
+
+    # Plot BodyPose data
+    ax.scatter(np_relevant_bodypose_data[:, 0], np_relevant_bodypose_data[:, 1], np_relevant_bodypose_data[:, 2], c='b', label='BodyPose Data')
+
+    # Plot Transformed BodyPose data
+    ax.scatter(transformed_bodypose_data[:, 0], transformed_bodypose_data[:, 1], transformed_bodypose_data[:, 2], c='g', label='Transformed BodyPose Data')
+
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+    ax.legend()
+
+    plt.show()
