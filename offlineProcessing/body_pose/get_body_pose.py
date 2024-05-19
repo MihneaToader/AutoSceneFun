@@ -298,10 +298,12 @@ def main():
     parser.add_argument("--model", type=str, default=os.path.join(MODELS_DIR, "pose_landmarker_heavy.task"), help="Path to model")
     parser.add_argument("-d", "--data", type=str, default=os.path.join(DATA_DIR, "media"), help="Path to image, video or stream data folder")
     parser.add_argument("-v", "--visualise", action="store_true", help="Visualise results")
-    parser.add_argument("-out", "--output", type=str, default=os.path.join(OUTPUT_DIR, "body_pose"), help="Path to save output")
+    parser.add_argument("-out", "--output", type=str, default=OUTPUT_DIR, help="Path to save output")
     parser.add_argument("-sf", "--set_fps", type=int, default=0, help="Set fps for video processing, 0 for original fps")
     parser.add_argument("--debugg", action="store_true", help="Debug mode")
     args = parser.parse_args()
+
+    args.output = os.path.join(args.output, "body_pose")
 
     if args.mode.lower() not in ["image", "video"]:
         raise ValueError(f"{args.mode} not supported. Video and Stream to be implemented")

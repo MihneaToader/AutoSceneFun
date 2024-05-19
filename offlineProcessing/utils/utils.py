@@ -10,6 +10,6 @@ MODELS_DIR = os.path.join(ROOT_DIR, 'models')
 BODY_POSE_DIR = os.path.join(ROOT_DIR, 'body_pose')
 
 # create empty folder structure if repo is cloned for the first time
-for folder in [OUTPUT_DIR, DATA_DIR]:
-    if not os.path.exists(folder):
-        os.makedirs(folder, exist_ok=True)
+# for folder in [OUTPUT_DIR, DATA_DIR]:
+#     if not os.path.exists(folder):
+#         os.makedirs(folder, exist_ok=True)

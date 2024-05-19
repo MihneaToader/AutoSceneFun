@@ -1,0 +1,10 @@
+{
+    "index_to_body_part": {
+        "15": "left_Wrist",
+        "16": "right_Wrist",
+        "17": "left_Hand_PinkyProximal",
+        "18": "right_Hand_PinkyProximal",
+        "19": "left_Hand_MiddleProximal",
+        "20": "right_Hand_MiddleProximal"
+    }
+}
