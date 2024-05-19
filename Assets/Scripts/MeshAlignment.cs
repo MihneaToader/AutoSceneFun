@@ -15,22 +15,21 @@ public class MeshAlignment : MonoBehaviour
     DMeshAABBTree3 targetTree;
     DMesh3 sourceDMesh;
     MeshICP icp;
+    GameObject combinedMeshObj;
     const int vertexReductionFactor = 3;
     int frameWait = 0;
-    int maxIcpIterations;
-    int icpIterations;
+    int maxIcpIterations = 150;
+    int icpIterations = 0;
     bool sceneModelLoaded = false;
     bool savedTarget = false;
     bool isAligning = false;
-    bool finishedAligning = false;
+    public bool finishedAligning = false;
 
     void Start()
     {
         sourceMeshFilter = sourceMeshObject.GetComponent<MeshFilter>();
         sceneManager.gameObject.SetActive(true);
         passthrough.gameObject.SetActive(false);
-        Debug.Log(sceneManager);
-        Debug.Log(passthrough);
         sceneManager.SceneModelLoadedSuccessfully += SceneModelLoaded;
     }
 
@@ -86,7 +85,7 @@ public class MeshAlignment : MonoBehaviour
                     DMesh3 targetDMesh = UnityMeshToDMesh(targetMesh);
                     targetTree = new DMeshAABBTree3(targetDMesh);
                     targetTree.Build();
-                    DisplayMesh(targetMesh, transform, "ComputedMesh");
+                    combinedMeshObj = DisplayMesh(targetMesh, transform, "ComputedMesh");
 
                     // Compute simplified source mesh
                     sourceDMesh = UnityMeshToDMesh(sourceMeshFilter.sharedMesh);
@@ -108,12 +107,17 @@ public class MeshAlignment : MonoBehaviour
                 Debug.Log("Starting alignment");
                 AlignMeshes();
                 icpIterations++;
-                if (icp.Converged || icpIterations >= maxIcpIterations)
+                if (icpIterations >= maxIcpIterations)
                 {
                     Debug.Log("Alignment finished");
                     finishedAligning = true;
                     sceneManager.gameObject.SetActive(false);
                     passthrough.gameObject.SetActive(true);
+                    combinedMeshObj.GetComponent<Renderer>().enabled = !combinedMeshObj.GetComponent<Renderer>().enabled;
+                    sourceMeshObject.GetComponent<Renderer>().enabled = !sourceMeshObject.GetComponent<Renderer>().enabled;
+                    OVRSceneRoom sceneRoom = (OVRSceneRoom)Object.FindObjectOfType(typeof(OVRSceneRoom));
+                    GameObject roomObject = sceneRoom.gameObject;
+                    roomObject.SetActive(false);
                 }
             }
         }
