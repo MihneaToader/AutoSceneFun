@@ -9,6 +9,11 @@ public class RecordAlignment : MonoBehaviour
     public GameObject cameraToSave;
     public GameObject alignedObject;
     public GameObject meshAlign;
+    public GameObject leftHand;
+    public GameObject rightHand;
+    public GameObject mycamera;
+
+    public GameObject audio;
     private bool savedMesh = false;
     private JsonData data = new JsonData();
 
@@ -54,6 +59,12 @@ public class RecordAlignment : MonoBehaviour
             SaveMeshToFile(meshObj);
             SaveMeshTransform(meshObj, "combinedMesh");
             SaveMeshTransform(alignedObject, "iPhoneMesh");
+            
+            leftHand.GetComponent<LogBoneLocation>().enabled = !leftHand.GetComponent<LogBoneLocation>().enabled;
+            rightHand.GetComponent<LogBoneLocation>().enabled = !rightHand.GetComponent<LogBoneLocation>().enabled;
+            mycamera.GetComponent<camera_position_recorder>().enabled = !mycamera.GetComponent<camera_position_recorder>().enabled;
+            audio.GetComponent<AudioRecorder>().enabled = !audio.GetComponent<AudioRecorder>().enabled;
+     
             savedMesh = true;
         }
         UpdateHeadset();
