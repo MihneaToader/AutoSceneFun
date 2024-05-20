@@ -58,21 +58,19 @@ def _format_meta_data(data, l_r_c="left") -> json:
                 new_joints[f"{l_r_c}_{joints_mapping.get(joint, joint)}"] = new_values
 
             # Save data to new dataset
-            new_dataset[t['Timestamp']] = new_joints
+            new_dataset[float(t['Timestamp'])] = new_joints
 
     elif l_r_c == 'camera':
         for t in data:
             new_head = {}
             head = t['Position_rotation']
             
-            # Rename axis labels
-            new_values = {position_map.get(key, key): value for key, value in head.items()}
-                
-            # Rename joint and assign the new values
-            new_head[f"{l_r_c}_head"] = new_values
+            for values in head.values():
+                # Rename axis labels
+                new_head = {position_map.get(key, key): value for key, value in values.items()}
 
             # Save data to new dataset
-            new_dataset[t['Timestamp']] = new_joints
+            new_dataset[float(t['Timestamp'])] = {"head":new_head}
 
     return new_dataset
 
@@ -88,8 +86,6 @@ def _merge_n_datasets(delta_ms, *datasets):
     
     # Initialize the merged dataset with the first dataset
     merged_data = datasets[0]
-
-    print(len(merged_data[next(iter(merged_data))].keys()))
     
     counter = 0
     # Iterate through the rest of the datasets
@@ -110,7 +106,7 @@ def _merge_n_datasets(delta_ms, *datasets):
                 if ts2 > ts1: # Speed up code
                     break
 
-    print(f"Found {counter} matches")
+    print(f"Merging datasets - found {counter} matches")
     
     return merged_data
 
@@ -135,15 +131,34 @@ def prepare_points_for_transformation(data_bodypose, data_meta):
 
     points_bodypose = []
     points_meta = []
+
+    # meta_right_hand = []
+    # body_right_hand = []
+    # meta_left_hand = []
+    # body_left_hand = []
+    
+    # for index, body_part in META_BODY_MAPPING.items():
+    #     if index in data_bodypose and body_part in data_meta:
+    #         if "left" in body_part:
+    #             meta_left_hand.append([data_meta[body_part]['x'], data_meta[body_part]['y'], data_meta[body_part]['z']])
+    #             body_left_hand.append([data_bodypose[index]['x'], data_bodypose[index]['y'], data_bodypose[index]['z']])
+    #         elif "right" in body_part:
+    #             meta_right_hand.append([data_meta[body_part]['x'], data_meta[body_part]['y'], data_meta[body_part]['z']])
+    #             body_right_hand.append([data_bodypose[index]['x'], data_bodypose[index]['y'], data_bodypose[index]['z']])
+
+    # points_bodypose.append(np.mean(body_left_hand, axis=0))
+    # points_bodypose.append(np.mean(body_right_hand, axis=0))
+    # points_meta.append(np.mean(meta_left_hand, axis=0))
+    # points_meta.append(np.mean(meta_right_hand, axis=0))
     
     for index, body_part in META_BODY_MAPPING.items():
         if index in data_bodypose and body_part in data_meta:
             points_bodypose.append([data_bodypose[index]['x'], data_bodypose[index]['y'], data_bodypose[index]['z']])
             points_meta.append([data_meta[body_part]['x'], data_meta[body_part]['y'], data_meta[body_part]['z']])
 
-    if 'head' in data_bodypose and 'camera_head' in data_meta:
+    if 'head' in data_bodypose and 'head' in data_meta:
         points_bodypose.append([data_bodypose['head']['x'], data_bodypose['head']['y'], data_bodypose['head']['z']])
-        points_meta.append([data_meta['camera_head']['x'], data_meta['camera_head']['y'], data_meta['camera_head']['z']])
+        points_meta.append([data_meta['head']['x'], data_meta['head']['y'], data_meta['head']['z']])
     
     return np.array(points_meta), np.array(points_bodypose)
 
@@ -241,7 +256,7 @@ def get_relevant_data(data:dict):
         for t, d in data.items():
             # Only keep left of hand data
             rel_joints = {key: value for key, value in d.items() if key in META_BODY_MAPPING.values()}
-            # rel_joints['camera_head'] = d['camera_head'].copy()
+            rel_joints['head'] = d['head'].copy()
             rel_data[t] = rel_joints
 
     return rel_data
@@ -376,6 +391,53 @@ def kabsch_scaling(points_metaquest, points_bodypose):
 
     return R, t
 
+# def get_vector_rotation(data_bodypose, data_meta):
+#     """
+#     Check that the data is in the correct format and extract the relevant points for the transformation.
+
+#     This function ensures that if data is missing, the corresponding points in the other dataset are also removed to assure correct input shapes.
+
+#     :return: (points_meta, points_bodypose)
+#     """
+
+#     meta_right_hand = []
+#     body_right_hand = []
+#     meta_left_hand = []
+#     body_left_hand = []
+    
+#     for index, body_part in META_BODY_MAPPING.items():
+#         if index in data_bodypose and body_part in data_meta:
+#             if "left" in body_part:
+#                 meta_left_hand.append([data_meta[body_part]['x'], data_meta[body_part]['y'], data_meta[body_part]['z']])
+#                 body_left_hand.append([data_bodypose[index]['x'], data_bodypose[index]['y'], data_bodypose[index]['z']])
+#             elif "right" in body_part:
+#                 meta_right_hand.append([data_meta[body_part]['x'], data_meta[body_part]['y'], data_meta[body_part]['z']])
+#                 body_right_hand.append([data_bodypose[index]['x'], data_bodypose[index]['y'], data_bodypose[index]['z']])
+
+#     body_pose_vec = np.mean(body_left_hand, axis=0) - np.mean(body_right_hand, axis=0)
+#     meta_vec = np.mean(meta_left_hand, axis=0) - np.mean(meta_right_hand, axis=0)
+
+#     print(body_pose_vec)
+#     print(meta_vec)
+
+#     # Normalize the vectors
+#     body_pose_vec = body_pose_vec / np.linalg.norm(body_pose_vec)
+#     meta_vec = meta_vec / np.linalg.norm(meta_vec)
+
+#     # Compute the cross product and the dot product
+#     v = np.cross(body_pose_vec, meta_vec)
+#     c = np.dot(body_pose_vec, meta_vec)
+    
+#     # Compute the skew-symmetric cross-product matrix of v
+#     v_cross = np.array([[0, -v[2], v[1]],
+#                         [v[2], 0, -v[0]],
+#                         [-v[1], v[0], 0]])
+    
+#     # Compute the rotation matrix using the Rodrigues' rotation formula
+#     R = np.eye(3) + v_cross + v_cross @ v_cross * ((1 - c) / (np.linalg.norm(v) ** 2))
+    
+#     return R
+
 
 def transform_points(points:np.array, R, t):
     return np.dot(points, R.T) + t
@@ -414,11 +476,11 @@ def process_data(meta_data_path, body_pose_path, output_path, delta_ms=30):
     data_righthand = get_formatted_meta_data(meta_data_path, "right", "hand")
     data_head = get_formatted_meta_data(meta_data_path, "camera", "position")
 
-    if data_lefthand == {} or data_righthand == {}: # Check if data is empty
+    if data_lefthand == {} or data_righthand == {} or data_head == {}: # Check if data is empty
         print(f"Error: No data found in {meta_data_path}.")
         return
     
-    data_metaquest = _merge_n_datasets(40, data_lefthand, data_righthand)
+    data_metaquest = _merge_n_datasets(40, data_lefthand, data_righthand, data_head)
 
     # Load body pose data
     with open(body_pose_path, 'r') as file:
@@ -450,14 +512,26 @@ def process_data(meta_data_path, body_pose_path, output_path, delta_ms=30):
         rel_data_metaquest = get_relevant_data({t_meta: d_meta})
         rel_data_bodypose = get_relevant_data({t_bodypose: d_bodypose})
 
+
+        # ===========================================
+        # Experiment: Get alternative rotation matrix
+        # ===========================================
+
+        # Isolate head data
+        # rel_data_metaquest_head = {t_meta: {k: v for k, v in rel_data_metaquest[t_meta].items() if "head" in k}}
+        # rel_data_bodypose_head = {t_bodypose: {k: v for k, v in rel_data_bodypose[t_bodypose].items() if "head" in k}}
+        # R = get_vector_rotation(rel_data_bodypose[t_bodypose], rel_data_metaquest[t_meta])
+
         # ================================
         # Step 3: Calculate transformation
         # ================================
         
         # Convert dictionaries to numpy arrays
+        # np_rel_data_meta, np_rel_data_bodypose = prepare_points_for_transformation(data_bodypose=rel_data_bodypose_head[t_bodypose], data_meta=rel_data_metaquest_head[t_meta])
         np_rel_data_meta, np_rel_data_bodypose = prepare_points_for_transformation(data_bodypose=rel_data_bodypose[t_bodypose], data_meta=rel_data_metaquest[t_meta])
         # Calculate the optimal rotation matrix, scaling factor, and translation vector
         R, t = kabsch_scaling(np_rel_data_meta, np_rel_data_bodypose)
+
     
         transformed_data_bodypose = transform_points(_dict_to_numpy(d_bodypose), R, t)
 
@@ -494,6 +568,9 @@ def process_data(meta_data_path, body_pose_path, output_path, delta_ms=30):
 
     meta_right_hand_from_t = {t: d for t, d in data_righthand.items() if float(t) >= first_meta_t-delta_ms/1000}
     _output_data(meta_right_hand_from_t, os.path.join(output_path, "meta_righthand.json"))
+
+    meta_head_from_t = {t: d for t, d in data_head.items() if float(t) >= first_meta_t-delta_ms/1000}
+    _output_data(meta_head_from_t, os.path.join(output_path, "meta_head.json"))
 
 
 def main():

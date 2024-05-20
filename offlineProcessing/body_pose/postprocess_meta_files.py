@@ -10,10 +10,11 @@ import utils
 # NOTE: Goal of this file is to translate the processed data to the format used by unity
 
 def process_file(file_path):
+    print(f"Processing file: {file_path}")
 
     # Check if valid filename
     filename = os.path.basename(file_path)
-    assert filename in ['bodypose.json', 'meta_lefthand.json', 'meta_righthand.json'], f"Invalid filename: {filename}, must be in ['bodypose.json', 'meta_lefthand.json', 'meta_righthand.json']"
+    assert filename in ['bodypose.json', 'meta_lefthand.json', 'meta_righthand.json', 'meta_head.json'], f"Invalid filename: {filename}, must be in ['bodypose.json', 'meta_lefthand.json', 'meta_righthand.json', 'meta_head.json']"
 
     def _convert_timestamp(timestamp):
         return datetime.fromtimestamp(float(timestamp)).strftime('%Y-%m-%d %H:%M:%S:%f')[:-3]

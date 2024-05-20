@@ -36,7 +36,7 @@ def main():
     print(f"Working on {args.set_fps} FPS")
 
     # Get body pose
-    cmd_get_body_pose = f"python -m body_pose.get_body_pose --mode Video --set_fps {args.set_fps} --model models/pose_landmarker_lite.task" 
+    cmd_get_body_pose = f"python -m body_pose.get_body_pose --mode Video --set_fps {args.set_fps} --model models/pose_landmarker_heavy.task" 
     
     if args.model:
         cmd_get_body_pose += f"--model {args.model}"
@@ -75,10 +75,5 @@ def main():
         os.system(cmd_postprocess_files)
     
 
-
-
-
-
 if __name__ == '__main__':
     main()
-    

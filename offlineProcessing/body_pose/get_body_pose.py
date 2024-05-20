@@ -273,9 +273,12 @@ def _create_necessary_folders(output_path, debugg=False):
 def process_data(args):
     if os.path.isdir(args.data):
         if args.mode.lower() == "video":
-            data = [i for i in os.listdir(args.data) if i.lower().endswith(".mov") or i.lower().endswith(".mp4")]
+            filenames = [i for i in os.listdir(args.data) if i.lower().endswith(".mov") or i.lower().endswith(".mp4")]
+            data = [os.path.join(args.data, i) for i in filenames]
+
         elif args.mode.lower() == "image":
-            data = [i for i in os.listdir(args.data) if i.lower().endswith(".jpg")]
+            filenames = [i for i in os.listdir(args.data) if i.lower().endswith(".jpg")]
+            data = [os.path.join(args.data, i) for i in filenames]
         
     elif {os.path.isfile(args.data) 
           and args.data.lower().endswith(".jpg") 
@@ -288,15 +291,14 @@ def process_data(args):
     
     # Process images
     for d in data:
-        image_path = os.path.join(args.data, d)
-        body_pose = BodyPose(image_path, args.model, args.output, args.visualise, args.debugg)
+        body_pose = BodyPose(d, args.model, args.output, args.visualise, args.debugg)
         body_pose._process_data(args.set_fps)
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-m", "--mode", type=str, default="Video", help="Generate pose from [Image, Video, Stream]")
     parser.add_argument("--model", type=str, default=os.path.join(MODELS_DIR, "pose_landmarker_heavy.task"), help="Path to model")
-    parser.add_argument("-d", "--data", type=str, default=os.path.join(DATA_DIR, "media"), help="Path to image, video or stream data folder")
+    parser.add_argument("-d", "--data", type=str, help="Path to image, video or stream data folder")
     parser.add_argument("-v", "--visualise", action="store_true", help="Visualise results")
     parser.add_argument("-out", "--output", type=str, default=OUTPUT_DIR, help="Path to save output")
     parser.add_argument("-sf", "--set_fps", type=int, default=0, help="Set fps for video processing, 0 for original fps")
@@ -304,6 +306,9 @@ def main():
     args = parser.parse_args()
 
     args.output = os.path.join(args.output, "body_pose")
+
+    if not args.data:
+        args.data = os.path.join(DATA_DIR, "media")
 
     if args.mode.lower() not in ["image", "video"]:
         raise ValueError(f"{args.mode} not supported. Video and Stream to be implemented")
