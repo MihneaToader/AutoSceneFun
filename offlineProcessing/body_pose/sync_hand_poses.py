@@ -1,9 +1,7 @@
 import json
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 from dateutil import tz
-import math
-import matplotlib.pyplot as plt
 import numpy as np
 import argparse
 import pandas as pd
@@ -11,13 +9,16 @@ import pandas as pd
 # Local modules
 import utils
 
-def _format_meta_data_hand(data, lr="left") -> json:
+# NOTE: exclude rotations in format_meta_data to speed up the code if needed
+
+
+def _format_meta_data(data, l_r_c="left") -> json:
     """
     (Helper function) Bring data in compatible format for further processing
     NOTE: Edit funciton as MetaQuest-data changes in format
     """
 
-    assert lr in ["left", "right"], "Invalid hand side. Choose 'left' or 'right'."
+    assert l_r_c in ["left", "right", "camera"], "Invalid 'l_r_c'. Choose 'left', 'right' or 'camera'."
 
     # Adjust timestamps (convert to unix timestamp)
     for t in data:
@@ -36,61 +37,94 @@ def _format_meta_data_hand(data, lr="left") -> json:
         "PositionX": "x", "PositionY": "y", "PositionZ": "z",
         "RotationW": "rw", "RotationX": "rx", "RotationY": "ry", "RotationZ": "rz"
     }
-    # Joints map for renaming
-    with open(os.path.join(utils.BODY_POSE_DIR, "hand_mapping.json"), 'r') as file:
-        joints_mapping = json.load(file)
 
     new_dataset = {}
 
-    # Rename joints and axis labels
-    for t in data:
-        new_joints = {}
-        joints = t['Position_rotation']
-        
-        for joint, values in joints.items():
-            # Rename axis labels
-            new_values = {position_map.get(key, key): value for key, value in values.items()}
+    if l_r_c in ['left', 'right']:
+        # Joints map for renaming
+        with open(os.path.join(utils.BODY_POSE_DIR, "hand_mapping.json"), 'r') as file:
+            joints_mapping = json.load(file)
             
-            # Rename joint and assign the new values
-            new_joints[f"{lr}_{joints_mapping.get(joint, joint)}"] = new_values
-        
-        # # Replace old joints with new joints
-        # t['Position_rotation'] = new_joints
+        # Rename joints and axis labels
+        for t in data:
+            new_joints = {}
+            joints = t['Position_rotation']
+            
+            for joint, values in joints.items():
+                # Rename axis labels
+                new_values = {position_map.get(key, key): value for key, value in values.items()}
+                
+                # Rename joint and assign the new values
+                new_joints[f"{l_r_c}_{joints_mapping.get(joint, joint)}"] = new_values
 
-        # Save data to new dataset
-        new_dataset[t['Timestamp']] = new_joints
+            # Save data to new dataset
+            new_dataset[t['Timestamp']] = new_joints
+
+    elif l_r_c == 'camera':
+        for t in data:
+            new_head = {}
+            head = t['Position_rotation']
+            
+            # Rename axis labels
+            new_values = {position_map.get(key, key): value for key, value in head.items()}
+                
+            # Rename joint and assign the new values
+            new_head[f"{l_r_c}_head"] = new_values
+
+            # Save data to new dataset
+            new_dataset[t['Timestamp']] = new_joints
 
     return new_dataset
 
 
-def _merge_datasets(data1, data2, delta_ms):
+def _merge_n_datasets(delta_ms, *datasets):
     """
     Merges two datasets based on their timestamps.
     """
 
-    data1_timestamps = list(data1.keys())
-    data2_timestamps = list(data2.keys())
+    # Check if at least one dataset is provided
+    if not datasets:
+        raise ValueError("At least one dataset must be provided")
     
-    for ts1 in data1_timestamps:
-        ts1_float = float(ts1)
+    # Initialize the merged dataset with the first dataset
+    merged_data = datasets[0]
+
+    print(len(merged_data[next(iter(merged_data))].keys()))
+    
+    counter = 0
+    # Iterate through the rest of the datasets
+    for data in datasets[1:]:
+        data1_timestamps = list(merged_data.keys())
+        data2_timestamps = list(data.keys())
         
-        for ts2 in data2_timestamps:
-            ts2_float = float(ts2)
+        for ts1 in data1_timestamps:
+            ts1_float = float(ts1)
             
-            if abs(ts1_float - ts2_float) * 1000 <= delta_ms:
-                data1[ts1].update(data2[ts2])
+            for ts2 in data2_timestamps:
+                ts2_float = float(ts2)
+                
+                if abs(ts1_float - ts2_float) * 1000 <= delta_ms:
+                    merged_data[ts1].update(data[ts2])
+                    counter += 1
+
+                if ts2 > ts1: # Speed up code
+                    break
+
+    print(f"Found {counter} matches")
     
-    return data1
+    return merged_data
 
 
 def _calculate_distance(coord1:np.array, coord2:np.array):
     """(Helper function) Calculate the Euclidean distance between two 3D points."""
     return np.linalg.norm(coord1 - coord2)
 
+
 def _get_data_at_t(data, t):
     return {t: data[str(t)]}
 
-def prepare_points_for_transformation(data_bodypose, data_meta, t_bodypose, t_meta):
+
+def prepare_points_for_transformation(data_bodypose, data_meta):
     """
     Check that the data is in the correct format and extract the relevant points for the transformation.
 
@@ -106,8 +140,13 @@ def prepare_points_for_transformation(data_bodypose, data_meta, t_bodypose, t_me
         if index in data_bodypose and body_part in data_meta:
             points_bodypose.append([data_bodypose[index]['x'], data_bodypose[index]['y'], data_bodypose[index]['z']])
             points_meta.append([data_meta[body_part]['x'], data_meta[body_part]['y'], data_meta[body_part]['z']])
+
+    if 'head' in data_bodypose and 'camera_head' in data_meta:
+        points_bodypose.append([data_bodypose['head']['x'], data_bodypose['head']['y'], data_bodypose['head']['z']])
+        points_meta.append([data_meta['camera_head']['x'], data_meta['camera_head']['y'], data_meta['camera_head']['z']])
     
     return np.array(points_meta), np.array(points_bodypose)
+
 
 def get_data_around_t(data:dict, timestamp) -> dict:
     """
@@ -133,6 +172,7 @@ def get_data_around_t(data:dict, timestamp) -> dict:
 
     return data_around_t
 
+
 def get_first_common_t(data1:dict, data2:dict, delta_ms) -> tuple:
     """
     Returns first common timestamp within threshold delta_ms.
@@ -153,6 +193,7 @@ def get_first_common_t(data1:dict, data2:dict, delta_ms) -> tuple:
 
     raise ValueError("No common timestamp found within threshold.")
 
+
 def _dict_to_numpy(data:dict):
     """(Helper function) Converts a dictionary of coordinates to a NumPy array."""
     coordinates = []
@@ -168,6 +209,8 @@ def get_relevant_data(data:dict):
     """
     Returns only the relevant data for the transformation.
     """
+
+    # TODO: INCLUDE HEAD IN BOTH DATASETS
     def _is_bodypose_data(d): # Helper function
         try:
             int(d)
@@ -181,18 +224,27 @@ def get_relevant_data(data:dict):
     if is_bodypose:
         rel_data = {}
         for t, d in data.items():
-            # Only keep left of hand data
-            rel_data[t] = {key: value for key, value in d.items() if key in META_BODY_MAPPING.keys()}
+            head_joints_list = [str(i) for i in range(0, 9)]
+            rel_joints = {key: value for key, value in d.items() if key in META_BODY_MAPPING.keys()}
 
-        return rel_data
+            # Calculate head position
+            head_joints = [value for key, value in d.items() if key in head_joints_list]
+            head_joints = [[i['x'], i['y'], i['z']] for i in head_joints]
+            head = np.mean(head_joints, axis=0)
+
+            # Add head to relevant joints
+            rel_joints['head'] = {'x': head[0], 'y': head[1], 'z': head[2]}
+            rel_data[t] = rel_joints
 
     else: # if is metaquest data
         rel_data = {}
         for t, d in data.items():
             # Only keep left of hand data
-            rel_data[t] = {key: value for key, value in d.items() if key in META_BODY_MAPPING.values()}
-        
-        return rel_data
+            rel_joints = {key: value for key, value in d.items() if key in META_BODY_MAPPING.values()}
+            # rel_joints['camera_head'] = d['camera_head'].copy()
+            rel_data[t] = rel_joints
+
+    return rel_data
 
 
 def sync_data(data_bodypose:dict, data_metaquest:dict, t_start_bodypose, t_start_lefthand):
@@ -241,7 +293,7 @@ def match_data(data_metaquest:dict, data_bodypose:dict, delta_ms):
     for t2, d2 in r_bodypose.items():
         for t1, d1 in r_meta.items():
             # Convert dictionaries to numpy arrays
-            np_d1, np_d2 = prepare_points_for_transformation(data_meta=d1, data_bodypose=d2, t_meta=t1, t_bodypose=t2)
+            np_d1, np_d2 = prepare_points_for_transformation(data_meta=d1, data_bodypose=d2)
 
             # Calculate the optimal rotation matrix, scaling factor, and translation vector
             R, t = kabsch_scaling(np_d1, np_d2)
@@ -263,7 +315,7 @@ def align_data(data1, data2, delta_ms):
     """
     Aligns two datasets based on their timestamps. Outputs datasets with common timestamps and same length.
 
-    retunrs: (new_data1, new_data2, time_differences)
+    returns: (new_data1, new_data2, time_differences)
     """
 
     # First timestamp is already synchronised
@@ -334,6 +386,22 @@ def _output_data(data, output_path):
     with open(output_path, 'w') as file:
         json.dump(data, file, indent=4)
 
+def get_formatted_meta_data(meta_data_path, key1:str, key2:str):
+
+    assert key1.lower() in ["left", "right", "camera"], "Invalid key1. Choose 'left', 'right' or 'camera'."
+
+    try:
+        data_filename = [i for i in os.listdir(meta_data_path) if key1 in i.lower() and key2 in i.lower()][0]
+    except IndexError:
+        print(f"Error: No file found for {key1} {key2}.")
+        return {}
+    
+    data_path = os.path.join(meta_data_path, data_filename)
+    with open(data_path, 'r') as file:
+        data = json.load(file)
+        data = _format_meta_data(data['Entries'], l_r_c=key1) # Remove Entries if not in data anymore
+
+    return data
 
 def process_data(meta_data_path, body_pose_path, output_path, delta_ms=30):
 
@@ -342,23 +410,15 @@ def process_data(meta_data_path, body_pose_path, output_path, delta_ms=30):
     # =====================
 
     # Load LEFT HAND from metaquest data
-    left_hand_data_filename = [i for i in os.listdir(meta_data_path) if "left" in i.lower() and "hand" in i.lower()][0]
-    left_hand_data_path = os.path.join(meta_data_path, left_hand_data_filename)
-    with open(left_hand_data_path, 'r') as file:
-        data_lefthand = json.load(file)
-        data_lefthand = _format_meta_data_hand(data_lefthand['Entries'], lr="left") # Remove Entries if not in data anymore
+    data_lefthand = get_formatted_meta_data(meta_data_path, "left", "hand")
+    data_righthand = get_formatted_meta_data(meta_data_path, "right", "hand")
+    data_head = get_formatted_meta_data(meta_data_path, "camera", "position")
 
-        # _output_data(data_lefthand, os.path.join(output_path, "meta_lefthand.json"))
-
-    right_hand_data_filename = [i for i in os.listdir(meta_data_path) if "right" in i.lower() and "hand" in i.lower()][0]
-    right_hand_data_path = os.path.join(meta_data_path, right_hand_data_filename)
-    with open(right_hand_data_path, 'r') as file:
-        data_righthand = json.load(file)
-        data_righthand = _format_meta_data_hand(data_righthand['Entries'], lr="right") # Remove Entries if not in data anymore
-        
-        # _output_data(data_righthand, os.path.join(output_path, "meta_righthand.json"))
-
-    data_metaquest = _merge_datasets(data_lefthand, data_righthand, 60)
+    if data_lefthand == {} or data_righthand == {}: # Check if data is empty
+        print(f"Error: No data found in {meta_data_path}.")
+        return
+    
+    data_metaquest = _merge_n_datasets(40, data_lefthand, data_righthand)
 
     # Load body pose data
     with open(body_pose_path, 'r') as file:
@@ -395,8 +455,7 @@ def process_data(meta_data_path, body_pose_path, output_path, delta_ms=30):
         # ================================
         
         # Convert dictionaries to numpy arrays
-        np_rel_data_meta, np_rel_data_bodypose = prepare_points_for_transformation(data_bodypose=rel_data_bodypose[t_bodypose], data_meta=rel_data_metaquest[t_meta], t_bodypose=t_bodypose, t_meta=t_meta)
-
+        np_rel_data_meta, np_rel_data_bodypose = prepare_points_for_transformation(data_bodypose=rel_data_bodypose[t_bodypose], data_meta=rel_data_metaquest[t_meta])
         # Calculate the optimal rotation matrix, scaling factor, and translation vector
         R, t = kabsch_scaling(np_rel_data_meta, np_rel_data_bodypose)
     

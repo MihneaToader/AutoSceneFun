@@ -67,7 +67,7 @@ def main():
     if not args.not_postprocess:
         print("Postprocessing files...")
 
-        cmd_postprocess_files = "python -m body_pose.postprocess_files"
+        cmd_postprocess_files = "python -m body_pose.postprocess_meta_files"
 
         if args.output:
             cmd_postprocess_files += f" --data {os.path.join(args.output, 'body_pose', 'final_recordings')}"
