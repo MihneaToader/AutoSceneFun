@@ -18,7 +18,7 @@ public class MeshAlignment : MonoBehaviour
     GameObject combinedMeshObj;
     const int vertexReductionFactor = 3;
     int frameWait = 0;
-    int maxIcpIterations = 150;
+    int maxIcpIterations = 75;
     int icpIterations = 0;
     bool sceneModelLoaded = false;
     bool savedTarget = false;
@@ -107,6 +107,7 @@ public class MeshAlignment : MonoBehaviour
                 Debug.Log("Starting alignment");
                 AlignMeshes();
                 icpIterations++;
+                Debug.Log("ICP Iteration: " + icpIterations);
                 if (icpIterations >= maxIcpIterations)
                 {
                     Debug.Log("Alignment finished");
