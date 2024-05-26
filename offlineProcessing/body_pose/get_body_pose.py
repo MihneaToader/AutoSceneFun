@@ -20,6 +20,7 @@ import argparse
 import os
 
 from utils import *
+from utils.tools.setup_folder_structure import _create_necessary_folders_bodypose
 
 
 class BodyPose():
@@ -296,24 +297,19 @@ def process_data(args):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("-d", "--data", type=str, help="Path to image, video or stream data folder")
+    parser.add_argument("-out", "--output", type=str, default=os.path.join(OUTPUT_DIR, 'body_pose'), help="Path to save output")
     parser.add_argument("-m", "--mode", type=str, default="Video", help="Generate pose from [Image, Video, Stream]")
     parser.add_argument("--model", type=str, default=os.path.join(MODELS_DIR, "pose_landmarker_heavy.task"), help="Path to model")
-    parser.add_argument("-d", "--data", type=str, help="Path to image, video or stream data folder")
     parser.add_argument("-v", "--visualise", action="store_true", help="Visualise results")
-    parser.add_argument("-out", "--output", type=str, default=OUTPUT_DIR, help="Path to save output")
     parser.add_argument("-sf", "--set_fps", type=int, default=0, help="Set fps for video processing, 0 for original fps")
     parser.add_argument("--debugg", action="store_true", help="Debug mode")
     args = parser.parse_args()
 
-    args.output = os.path.join(args.output, "body_pose")
-
-    if not args.data:
-        args.data = os.path.join(DATA_DIR, "media")
-
     if args.mode.lower() not in ["image", "video"]:
         raise ValueError(f"{args.mode} not supported. Video and Stream to be implemented")
 
-    _create_necessary_folders(args.output, args.debugg)
+    _create_necessary_folders_bodypose(args.output, args.debugg)
 
     process_data(args)
 

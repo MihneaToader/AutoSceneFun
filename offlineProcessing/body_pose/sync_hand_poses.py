@@ -8,6 +8,8 @@ import pandas as pd
 
 # Local modules
 import utils
+from utils.tools.setup_folder_structure import _create_necessary_folders_sync_hand_poses
+from body_pose.postprocess_meta_files import process_folder
 
 # NOTE: exclude rotations in format_meta_data to speed up the code if needed
 
@@ -120,11 +122,13 @@ def _get_data_at_t(data, t):
     return {t: data[str(t)]}
 
 
-def prepare_points_for_transformation(data_bodypose, data_meta):
+def prepare_points_for_transformation(data_bodypose, data_meta, tr="translation"):
     """
     Check that the data is in the correct format and extract the relevant points for the transformation.
 
     This function ensures that if data is missing, the corresponding points in the other dataset are also removed to assure correct input shapes.
+
+    :param tr: either get data for translation or rotation
 
     :return: (points_meta, points_bodypose)
     """
@@ -132,33 +136,58 @@ def prepare_points_for_transformation(data_bodypose, data_meta):
     points_bodypose = []
     points_meta = []
 
-    # meta_right_hand = []
-    # body_right_hand = []
-    # meta_left_hand = []
-    # body_left_hand = []
-    
-    # for index, body_part in META_BODY_MAPPING.items():
-    #     if index in data_bodypose and body_part in data_meta:
-    #         if "left" in body_part:
-    #             meta_left_hand.append([data_meta[body_part]['x'], data_meta[body_part]['y'], data_meta[body_part]['z']])
-    #             body_left_hand.append([data_bodypose[index]['x'], data_bodypose[index]['y'], data_bodypose[index]['z']])
-    #         elif "right" in body_part:
-    #             meta_right_hand.append([data_meta[body_part]['x'], data_meta[body_part]['y'], data_meta[body_part]['z']])
-    #             body_right_hand.append([data_bodypose[index]['x'], data_bodypose[index]['y'], data_bodypose[index]['z']])
+    if tr == "translation":
+        # meta_right_hand = []
+        # body_right_hand = []
+        # meta_left_hand = []
+        # body_left_hand = []
+        
+        # for index, body_part in META_BODY_MAPPING.items():
+        #     if index in data_bodypose and body_part in data_meta:
+        #         if "left" in body_part:
+        #             meta_left_hand.append([data_meta[body_part]['x'], data_meta[body_part]['y'], data_meta[body_part]['z']])
+        #             body_left_hand.append([data_bodypose[index]['x'], data_bodypose[index]['y'], data_bodypose[index]['z']])
+        #         elif "right" in body_part:
+        #             meta_right_hand.append([data_meta[body_part]['x'], data_meta[body_part]['y'], data_meta[body_part]['z']])
+        #             body_right_hand.append([data_bodypose[index]['x'], data_bodypose[index]['y'], data_bodypose[index]['z']])
 
-    # points_bodypose.append(np.mean(body_left_hand, axis=0))
-    # points_bodypose.append(np.mean(body_right_hand, axis=0))
-    # points_meta.append(np.mean(meta_left_hand, axis=0))
-    # points_meta.append(np.mean(meta_right_hand, axis=0))
-    
-    for index, body_part in META_BODY_MAPPING.items():
-        if index in data_bodypose and body_part in data_meta:
-            points_bodypose.append([data_bodypose[index]['x'], data_bodypose[index]['y'], data_bodypose[index]['z']])
-            points_meta.append([data_meta[body_part]['x'], data_meta[body_part]['y'], data_meta[body_part]['z']])
+        # points_bodypose.append(np.mean(body_left_hand, axis=0))
+        # points_bodypose.append(np.mean(body_right_hand, axis=0))
+        # points_meta.append(np.mean(meta_left_hand, axis=0))
+        # points_meta.append(np.mean(meta_right_hand, axis=0))
 
-    if 'head' in data_bodypose and 'head' in data_meta:
-        points_bodypose.append([data_bodypose['head']['x'], data_bodypose['head']['y'], data_bodypose['head']['z']])
-        points_meta.append([data_meta['head']['x'], data_meta['head']['y'], data_meta['head']['z']])
+        if 'head' in data_bodypose and 'head' in data_meta:
+            points_bodypose.append([data_bodypose['head']['x'], data_bodypose['head']['y'], data_bodypose['head']['z']])
+            points_meta.append([data_meta['head']['x'], data_meta['head']['y'], data_meta['head']['z']])
+    
+    elif tr == "rotation":
+        # for index, body_part in META_BODY_MAPPING.items():
+        #     if index in data_bodypose and body_part in data_meta:
+        #         points_bodypose.append([data_bodypose[index]['x'], data_bodypose[index]['y'], data_bodypose[index]['z']])
+        #         points_meta.append([data_meta[body_part]['x'], data_meta[body_part]['y'], data_meta[body_part]['z']])
+
+        meta_right_hand = []
+        body_right_hand = []
+        meta_left_hand = []
+        body_left_hand = []
+
+        for index, body_part in META_BODY_MAPPING.items():
+            if index in data_bodypose and body_part in data_meta:
+                if "left" in body_part:
+                    meta_left_hand.append([data_meta[body_part]['x'], data_meta[body_part]['y'], data_meta[body_part]['z']])
+                    body_left_hand.append([data_bodypose[index]['x'], data_bodypose[index]['y'], data_bodypose[index]['z']])
+                elif "right" in body_part:
+                    meta_right_hand.append([data_meta[body_part]['x'], data_meta[body_part]['y'], data_meta[body_part]['z']])
+                    body_right_hand.append([data_bodypose[index]['x'], data_bodypose[index]['y'], data_bodypose[index]['z']])
+
+        points_bodypose.append(np.mean(body_left_hand, axis=0))
+        points_bodypose.append(np.mean(body_right_hand, axis=0))
+        points_meta.append(np.mean(meta_left_hand, axis=0))
+        points_meta.append(np.mean(meta_right_hand, axis=0))
+
+        if 'head' in data_bodypose and 'head' in data_meta:
+            points_bodypose.append([data_bodypose['head']['x'], data_bodypose['head']['y'], data_bodypose['head']['z']])
+            points_meta.append([data_meta['head']['x'], data_meta['head']['y'], data_meta['head']['z']])
     
     return np.array(points_meta), np.array(points_bodypose)
 
@@ -308,14 +337,16 @@ def match_data(data_metaquest:dict, data_bodypose:dict, delta_ms):
     for t2, d2 in r_bodypose.items():
         for t1, d1 in r_meta.items():
             # Convert dictionaries to numpy arrays
-            np_d1, np_d2 = prepare_points_for_transformation(data_meta=d1, data_bodypose=d2)
+            np_d1_t, np_d2_t = prepare_points_for_transformation(data_meta=d1, data_bodypose=d2, tr="translation")
+            np_d1_r, np_d2_r = prepare_points_for_transformation(data_meta=d1, data_bodypose=d2, tr="rotation")
 
             # Calculate the optimal rotation matrix, scaling factor, and translation vector
-            R, t = kabsch_scaling(np_d1, np_d2)
+            t = kabsch_scaling(np_d1_t, np_d2_t, get="translation")
+            R = kabsch_scaling(np_d1_r, np_d2_r, get="rotation")
 
-            transformed_d1 = transform_points(np_d1, R, t)
+            transformed_d1 = transform_points(np_d1_r, R, t)
 
-            distances.append((_calculate_distance(transformed_d1, np_d2), t1, t2))
+            distances.append((_calculate_distance(transformed_d1, np_d2_r), t1, t2))
 
     # Find the minimum distance
     min_distance, closest_t_meta, closest_t_body = min(distances, key=lambda x: x[0])
@@ -359,84 +390,92 @@ def align_data(data1, data2, delta_ms):
     return new_data1, new_data2, t_diff
 
 
-def kabsch_scaling(points_metaquest, points_bodypose):
+# def kabsch_scaling(points_metaquest, points_bodypose):
+#     """
+#     Calculates the optimal rotation matrix and scaling factor to align two sets of points.
+    
+#     :param points_metaquest: Nx3 numpy array of points (simple data).
+#     :param points_bodypose: Nx3 numpy array of corresponding points (detailed data).
+#     :return: Tuple containing the rotation matrix, scaling factor, and translation vector.
+#     """
+
+#     # print(f"Shape points_metaquest: {points_metaquest.shape}, shape points_bodypose: {points_bodypose.shape}")
+#     # Step 1: Translate points to their centroids
+#     centroid_meta = np.mean(points_metaquest, axis=0)
+#     centroid_body = np.mean(points_bodypose, axis=0)
+#     points_meta_centered = points_metaquest - centroid_meta
+#     points_body_centered = points_bodypose - centroid_body
+    
+#     # Step 2: Compute the covariance matrix
+#     H = np.dot(points_body_centered.T, points_meta_centered)
+
+#     U, S, Vt = np.linalg.svd(H) # Singular Value Decomposition
+
+#     R = np.dot(Vt.T, U.T)
+
+#     # special reflection case
+#     if np.linalg.det(R) < 0:
+#         Vt[2, :] *= -1
+#         R = np.dot(Vt.T, U.T)
+
+#     t = centroid_meta - np.dot(R, centroid_body)
+
+#     return R, t
+
+def kabsch_scaling(points_metaquest, points_bodypose, get):
     """
-    Calculates the optimal rotation matrix and scaling factor to align two sets of points.
+    Calculates the optimal rotation matrix (around X and Z axes) and translation vector to align two sets of points.
     
     :param points_metaquest: Nx3 numpy array of points (simple data).
     :param points_bodypose: Nx3 numpy array of corresponding points (detailed data).
-    :return: Tuple containing the rotation matrix, scaling factor, and translation vector.
+    :return: Tuple containing the rotation matrix and translation vector.
     """
 
-    # print(f"Shape points_metaquest: {points_metaquest.shape}, shape points_bodypose: {points_bodypose.shape}")
-    # Step 1: Translate points to their centroids
+    assert get in ["rotation", "translation"], "Invalid 'get'. Choose 'rotation' or 'translation'."
+
     centroid_meta = np.mean(points_metaquest, axis=0)
     centroid_body = np.mean(points_bodypose, axis=0)
+
+    if get == "translation":
+        return centroid_meta - centroid_body
+
     points_meta_centered = points_metaquest - centroid_meta
     points_body_centered = points_bodypose - centroid_body
-    
-    # Step 2: Compute the covariance matrix
-    H = np.dot(points_body_centered.T, points_meta_centered)
 
-    U, S, Vt = np.linalg.svd(H) # Singular Value Decomposition
+    H = np.dot(points_body_centered.T, points_meta_centered)
+    U, S, Vt = np.linalg.svd(H)
 
     R = np.dot(Vt.T, U.T)
-
-    # special reflection case
     if np.linalg.det(R) < 0:
         Vt[2, :] *= -1
         R = np.dot(Vt.T, U.T)
 
-    t = centroid_meta - np.dot(R, centroid_body)
+    # Extract the rotation around the Y axis
+    beta = np.arctan2(R[0, 2], R[2, 2])
 
-    return R, t
+    # Construct the rotation matrix around the Y axis
+    Ry1 = np.array([
+        [np.cos(beta), 0, np.sin(beta)],
+        [0, 1, 0],
+        [-np.sin(beta), 0, np.cos(beta)]
+    ])
 
-# def get_vector_rotation(data_bodypose, data_meta):
-#     """
-#     Check that the data is in the correct format and extract the relevant points for the transformation.
+    Ry2 = np.array([
+        [np.cos(beta), 0, -np.sin(beta)],
+        [0, 1, 0],
+        [np.sin(beta), 0, np.cos(beta)]
+    ])
 
-#     This function ensures that if data is missing, the corresponding points in the other dataset are also removed to assure correct input shapes.
+    transformed_bodypose1 = np.dot(points_body_centered, Ry1.T)
+    transformed_bodypose2 = np.dot(points_body_centered, Ry2.T)
 
-#     :return: (points_meta, points_bodypose)
-#     """
+    dist1 = np.linalg.norm(points_meta_centered - transformed_bodypose1)
+    dist2 = np.linalg.norm(points_meta_centered - transformed_bodypose2)
 
-#     meta_right_hand = []
-#     body_right_hand = []
-#     meta_left_hand = []
-#     body_left_hand = []
-    
-#     for index, body_part in META_BODY_MAPPING.items():
-#         if index in data_bodypose and body_part in data_meta:
-#             if "left" in body_part:
-#                 meta_left_hand.append([data_meta[body_part]['x'], data_meta[body_part]['y'], data_meta[body_part]['z']])
-#                 body_left_hand.append([data_bodypose[index]['x'], data_bodypose[index]['y'], data_bodypose[index]['z']])
-#             elif "right" in body_part:
-#                 meta_right_hand.append([data_meta[body_part]['x'], data_meta[body_part]['y'], data_meta[body_part]['z']])
-#                 body_right_hand.append([data_bodypose[index]['x'], data_bodypose[index]['y'], data_bodypose[index]['z']])
-
-#     body_pose_vec = np.mean(body_left_hand, axis=0) - np.mean(body_right_hand, axis=0)
-#     meta_vec = np.mean(meta_left_hand, axis=0) - np.mean(meta_right_hand, axis=0)
-
-#     print(body_pose_vec)
-#     print(meta_vec)
-
-#     # Normalize the vectors
-#     body_pose_vec = body_pose_vec / np.linalg.norm(body_pose_vec)
-#     meta_vec = meta_vec / np.linalg.norm(meta_vec)
-
-#     # Compute the cross product and the dot product
-#     v = np.cross(body_pose_vec, meta_vec)
-#     c = np.dot(body_pose_vec, meta_vec)
-    
-#     # Compute the skew-symmetric cross-product matrix of v
-#     v_cross = np.array([[0, -v[2], v[1]],
-#                         [v[2], 0, -v[0]],
-#                         [-v[1], v[0], 0]])
-    
-#     # Compute the rotation matrix using the Rodrigues' rotation formula
-#     R = np.eye(3) + v_cross + v_cross @ v_cross * ((1 - c) / (np.linalg.norm(v) ** 2))
-    
-#     return R
+    if dist1 < dist2:
+        return Ry1
+    else:
+        return Ry2
 
 
 def transform_points(points:np.array, R, t):
@@ -465,7 +504,7 @@ def get_formatted_meta_data(meta_data_path, key1:str, key2:str):
 
     return data
 
-def process_data(meta_data_path, body_pose_path, output_path, delta_ms=30):
+def process_data(meta_data_path, body_pose_path, output_path, delta_ms=30, postprocess=False):
 
     # =====================
     # Step 1: Load the data
@@ -512,26 +551,22 @@ def process_data(meta_data_path, body_pose_path, output_path, delta_ms=30):
         rel_data_metaquest = get_relevant_data({t_meta: d_meta})
         rel_data_bodypose = get_relevant_data({t_bodypose: d_bodypose})
 
-
-        # ===========================================
-        # Experiment: Get alternative rotation matrix
-        # ===========================================
-
-        # Isolate head data
-        # rel_data_metaquest_head = {t_meta: {k: v for k, v in rel_data_metaquest[t_meta].items() if "head" in k}}
-        # rel_data_bodypose_head = {t_bodypose: {k: v for k, v in rel_data_bodypose[t_bodypose].items() if "head" in k}}
-        # R = get_vector_rotation(rel_data_bodypose[t_bodypose], rel_data_metaquest[t_meta])
-
         # ================================
         # Step 3: Calculate transformation
         # ================================
         
         # Convert dictionaries to numpy arrays
         # np_rel_data_meta, np_rel_data_bodypose = prepare_points_for_transformation(data_bodypose=rel_data_bodypose_head[t_bodypose], data_meta=rel_data_metaquest_head[t_meta])
-        np_rel_data_meta, np_rel_data_bodypose = prepare_points_for_transformation(data_bodypose=rel_data_bodypose[t_bodypose], data_meta=rel_data_metaquest[t_meta])
+        np_rel_data_meta_t, np_rel_data_bodypose_t = prepare_points_for_transformation(data_bodypose=rel_data_bodypose[t_bodypose], 
+                                                                                       data_meta=rel_data_metaquest[t_meta], 
+                                                                                       tr="translation")
+        
+        np_rel_data_meta_r, np_rel_data_bodypose_r = prepare_points_for_transformation(data_bodypose=rel_data_bodypose[t_bodypose], 
+                                                                                       data_meta=rel_data_metaquest[t_meta], 
+                                                                                       tr="rotation")
         # Calculate the optimal rotation matrix, scaling factor, and translation vector
-        R, t = kabsch_scaling(np_rel_data_meta, np_rel_data_bodypose)
-
+        t = kabsch_scaling(np_rel_data_meta_t, np_rel_data_bodypose_t, get="translation")
+        R = kabsch_scaling(np_rel_data_meta_r, np_rel_data_bodypose_r, get="rotation")
     
         transformed_data_bodypose = transform_points(_dict_to_numpy(d_bodypose), R, t)
 
@@ -539,14 +574,14 @@ def process_data(meta_data_path, body_pose_path, output_path, delta_ms=30):
         new_bodypose[t_bodypose] = {str(i): {'x': lm[0], 'y': lm[1], 'z': lm[2]} for i, lm in enumerate(transformed_data_bodypose)}
         
         # Performance assessment
-        transformed_rel_data_bodypose = transform_points(np_rel_data_bodypose, R, t)
+        transformed_rel_data_bodypose = transform_points(np_rel_data_bodypose_r, R, t)
 
         # ====================================
         # (DEBUGGING) Calculate mean distances
         # ====================================
 
-        distances_before = np.abs(np_rel_data_meta - np_rel_data_bodypose)
-        distances_after = np.abs(np_rel_data_meta - transformed_rel_data_bodypose)
+        distances_before = np.abs(np_rel_data_meta_r - np_rel_data_bodypose_r)
+        distances_after = np.abs(np_rel_data_meta_r - transformed_rel_data_bodypose)
 
         db.append(distances_before)
         da.append(distances_after)
@@ -572,36 +607,30 @@ def process_data(meta_data_path, body_pose_path, output_path, delta_ms=30):
     meta_head_from_t = {t: d for t, d in data_head.items() if float(t) >= first_meta_t-delta_ms/1000}
     _output_data(meta_head_from_t, os.path.join(output_path, "meta_head.json"))
 
+    # Postprocess the files
+    if postprocess:
+        process_folder(output_path)
+
 
 def main():
 
     parser = argparse.ArgumentParser(description="Synchronize hand pose data from MetaQuest and body pose data.")
-    parser.add_argument("--data", type=str, default=utils.DATA_DIR,
-                        help="Path to the data directory.")
-    parser.add_argument("--data_csv", type=str, default=os.path.join(utils.DATA_DIR, "data_mapping.csv"),
-                        help="Path to the MetaQuest left hand pose data file.")
-    parser.add_argument("--output_dir", type=str, default=utils.OUTPUT_DIR,
+    parser.add_argument("--data_meta", type=str,
+                        help="Path to MetaQuest data directory.")
+    parser.add_argument("--data_bodypose", type=str,
+                        help="Path to the body pose data.")
+    parser.add_argument("--output_dir", type=str, default=os.path.join(utils.OUTPUT_DIR, 'final'),
                         help="Path to the output directory.")
+    parser.add_argument("--set_output_name", type=str,
+                        help="Set the name of the output directory.")
     parser.add_argument("--delta", type=int, default=30,
                         help="Time difference threshold in milliseconds.")
+    parser.add_argument("--postprocess", action="store_true",
+                        help="Translate output into unity format.")
 
     args = parser.parse_args()
 
-    # Setup output structure
-    org_output_path = args.output_dir
-    args.output_dir = os.path.join(args.output_dir, "body_pose", "final_recordings")
-
-    # Check if data mapping file exists
-    if not os.path.isfile(args.data_csv):
-        print(f"Error: Data file not found at {args.data_csv}.")
-        exit(1)
-
-    # Load file mapping
-    mappings = pd.read_csv(args.data_csv, index_col="id")
-
-    # Ensure that output directory exists
-    if not os.path.exists(args.output_dir):
-        os.makedirs(args.output_dir)
+    args.output_dir = _create_necessary_folders_sync_hand_poses(args.output_dir, set_output_name=args.set_output_name)
 
     # Load meta bodypose mapping
     with open(os.path.join(utils.BODY_POSE_DIR, "meta_bodypose_mapping.json"), 'r') as file:
@@ -610,43 +639,21 @@ def main():
         META_BODY_MAPPING = META_BODY_MAPPING['index_to_body_part']
 
         # Check if keys are convertable to type int and values are type str
-        assert all(isinstance(int(k), int) for k in META_BODY_MAPPING.keys())
+        assert all(isinstance(int(k), int) for k in META_BODY_MAPPING.keys()), f"{os.path.join(utils.BODY_POSE_DIR, 'meta_bodypose_mapping.json')} must contain ints as keys."
 
+    # Get correct bodypose data
+    body_pose_name = [v for v in os.listdir(args.data_meta) if v.lower().endswith(".mov") or v.lower().endswith(".mp4")]
 
-    for index, recording in mappings.iterrows():
+    if len(body_pose_name) == 0:
+        print(f"Tried to get bodypose name from {args.data_meta} but found no corresponding video file.")
+    elif len(body_pose_name) > 1:
+        print(f"Found multiple video files in {args.data_meta}. Using {body_pose_name[0].rsplit('.')[0]} as bodypose data.")
 
-        session_name = recording["final_name"] if not pd.isna(recording["final_name"]) else f"session {index}"
-        print(f"Processing recording '{session_name}'...")
-        
-        # =====================================
-        # Set paths and ensure folder structure
-        # =====================================
-
-        if os.path.exists(recording["meta_data"]):
-            meta_data_path = recording["meta_data"]
-        else:
-            meta_data_path = os.path.join(args.data, "meta_quest", recording["meta_data"])
-            if not os.path.exists(meta_data_path):
-                print(f"Error: MetaQuest data not found at {meta_data_path}, skipping recording {session_name}.")
-                continue
-
-        if os.path.exists(recording["body_pose_media"]):
-            body_pose_path = recording["body_pose_media"]
-        else:
-            body_pose_path = os.path.join(org_output_path, "body_pose", "raw", recording["body_pose_media"].split(".")[0] + ".json")
-            if not os.path.exists(body_pose_path):
-                print(f"Error: Bodypose data not found at {body_pose_path}, skipping recording {session_name}.")
-                continue
+    body_pose_name = body_pose_name[0].rsplit('.')[0]
+    args.data_bodypose = os.path.join(args.data_bodypose, f"{body_pose_name}.json")
     
-        # Set output path
-        if pd.isna(recording["final_name"]) or recording["final_name"].strip() == "":
-            output_path = os.path.join(args.output_dir, f"session_{index}")
-            os.makedirs(output_path, exist_ok=True)
-        else:
-            output_path = os.path.join(args.output_dir, recording["final_name"])
-            os.makedirs(output_path, exist_ok=True)
-
-        process_data(meta_data_path, body_pose_path, output_path, args.delta)
+    # Process data
+    process_data(args.data_meta, args.data_bodypose, args.output_dir, args.delta, args.postprocess)
 
 if __name__ == "__main__":
     main()
