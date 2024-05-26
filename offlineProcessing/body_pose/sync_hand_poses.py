@@ -1,51 +1,29 @@
 import json
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 from dateutil import tz
-import math
-import matplotlib.pyplot as plt
 import numpy as np
 import argparse
 import pandas as pd
 
 # Local modules
 import utils
+from utils.tools.setup_folder_structure import _create_necessary_folders_sync_hand_poses
+from body_pose.postprocess_meta_files import process_folder
+
+# NOTE: exclude rotations in format_meta_data to speed up the code if needed
 
 
-# NOTE: ADAPT FORMAT_DATA FUNCTION TO NEW DATA FORMAT
-# NOTE 2: THIS SCRIPT ONLY MAPS DATA USING THE LEFT HAND!
-
-def plot_data(np_relevant_meta_data, np_relevant_bodypose_data, transformed_bodypose_data):
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-
-    # Plot MetaQuest data
-    ax.scatter(np_relevant_meta_data[:, 0], np_relevant_meta_data[:, 1], np_relevant_meta_data[:, 2], c='r', label='MetaQuest Data')
-
-    # Plot BodyPose data
-    ax.scatter(np_relevant_bodypose_data[:, 0], np_relevant_bodypose_data[:, 1], np_relevant_bodypose_data[:, 2], c='b', label='BodyPose Data')
-
-    # Plot Transformed BodyPose data
-    ax.scatter(transformed_bodypose_data[:, 0], transformed_bodypose_data[:, 1], transformed_bodypose_data[:, 2], c='g', label='Transformed BodyPose Data')
-
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-    ax.legend()
-
-    plt.show()
-
-
-
-def _format_data(data) -> json:
+def _format_meta_data(data, l_r_c="left") -> json:
     """
     (Helper function) Bring data in compatible format for further processing
     NOTE: Edit funciton as MetaQuest-data changes in format
     """
-    
+
+    assert l_r_c in ["left", "right", "camera"], "Invalid 'l_r_c'. Choose 'left', 'right' or 'camera'."
+
     # Adjust timestamps (convert to unix timestamp)
     for t in data:
-        # print(t['Timestamp'])
         base_str = t['Timestamp'][:t['Timestamp'].rfind(':')]
         millies = t['Timestamp'][t['Timestamp'].rfind(':')+1:]
         
@@ -61,296 +39,549 @@ def _format_data(data) -> json:
         "PositionX": "x", "PositionY": "y", "PositionZ": "z",
         "RotationW": "rw", "RotationX": "rx", "RotationY": "ry", "RotationZ": "rz"
     }
-    # Joints map for renaming
-    with open(os.path.join(utils.BODY_POSE_DIR, "hand_mapping.json"), 'r') as file:
-        joints_mapping = json.load(file)
 
-    # Rename joints and axis labels
-    for t in data:
-        new_joints = {}
-        joints = t['Position_rotation']
-        
-        for joint, values in joints.items():
-            # Rename axis labels
-            new_values = {position_map.get(key, key): value for key, value in values.items()}
+    new_dataset = {}
+
+    if l_r_c in ['left', 'right']:
+        # Joints map for renaming
+        with open(os.path.join(utils.BODY_POSE_DIR, "hand_mapping.json"), 'r') as file:
+            joints_mapping = json.load(file)
             
-            # Rename joint and assign the new values
-            new_joints[joints_mapping.get(joint, joint)] = new_values
+        # Rename joints and axis labels
+        for t in data:
+            new_joints = {}
+            joints = t['Position_rotation']
+            
+            for joint, values in joints.items():
+                # Rename axis labels
+                new_values = {position_map.get(key, key): value for key, value in values.items()}
+                
+                # Rename joint and assign the new values
+                new_joints[f"{l_r_c}_{joints_mapping.get(joint, joint)}"] = new_values
+
+            # Save data to new dataset
+            new_dataset[float(t['Timestamp'])] = new_joints
+
+    elif l_r_c == 'camera':
+        for t in data:
+            new_head = {}
+            head = t['Position_rotation']
+            
+            for values in head.values():
+                # Rename axis labels
+                new_head = {position_map.get(key, key): value for key, value in values.items()}
+
+            # Save data to new dataset
+            new_dataset[float(t['Timestamp'])] = {"head":new_head}
+
+    return new_dataset
+
+
+def _merge_n_datasets(delta_ms, *datasets):
+    """
+    Merges two datasets based on their timestamps.
+    """
+
+    # Check if at least one dataset is provided
+    if not datasets:
+        raise ValueError("At least one dataset must be provided")
+    
+    # Initialize the merged dataset with the first dataset
+    merged_data = datasets[0]
+    
+    counter = 0
+    # Iterate through the rest of the datasets
+    for data in datasets[1:]:
+        data1_timestamps = list(merged_data.keys())
+        data2_timestamps = list(data.keys())
         
-        # Replace old joints with new joints
-        t['Position_rotation'] = new_joints
+        for ts1 in data1_timestamps:
+            ts1_float = float(ts1)
+            
+            for ts2 in data2_timestamps:
+                ts2_float = float(ts2)
+                
+                if abs(ts1_float - ts2_float) * 1000 <= delta_ms:
+                    merged_data[ts1].update(data[ts2])
+                    counter += 1
 
-    return data
+                if ts2 > ts1: # Speed up code
+                    break
 
-def _get_data_creation_date(data_path):
-    """(Helper function) Get creation time of video from metadata, including milliseconds if available."""
-
-    try:  
-        timestamp = os.stat(data_path).st_birthtime
-
-        return timestamp
+    print(f"Merging datasets - found {counter} matches")
     
-    except Exception as e:
-        print("Warning: Unsupported media type.")
-        return None
-    
-def _dict_to_numpy(data):
-    """(Helper function) Converts a dictionary of coordinates to a NumPy array."""
-    coordinates = []
-    for key, coords in data.items():
-        # Ensure 'x', 'y', 'z' are in the coords dictionary
-        if all(k in coords for k in ['x', 'y', 'z']):
-            coordinates.append((coords['x'], coords['y'], coords['z']))
-    
-    # Convert list of tuples to a NumPy array
-    return np.array(coordinates)
+    return merged_data
 
-def _calculate_distance(coord1, coord2):
+
+def _calculate_distance(coord1:np.array, coord2:np.array):
     """(Helper function) Calculate the Euclidean distance between two 3D points."""
-    return math.sqrt((coord1['x'] - coord2['x']) ** 2 + 
-                     (coord1['y'] - coord2['y']) ** 2 + 
-                     (coord1['z'] - coord2['z']) ** 2)
+    return np.linalg.norm(coord1 - coord2)
 
-def get_metaquest_data_at_t(data_metaquest, t):
+
+def _get_data_at_t(data, t):
+    return {t: data[str(t)]}
+
+
+def prepare_points_for_transformation(data_bodypose, data_meta, tr="translation"):
+    """
+    Check that the data is in the correct format and extract the relevant points for the transformation.
+
+    This function ensures that if data is missing, the corresponding points in the other dataset are also removed to assure correct input shapes.
+
+    :param tr: either get data for translation or rotation
+
+    :return: (points_meta, points_bodypose)
+    """
+
+    points_bodypose = []
+    points_meta = []
+
+    if tr == "translation":
+        # meta_right_hand = []
+        # body_right_hand = []
+        # meta_left_hand = []
+        # body_left_hand = []
+        
+        # for index, body_part in META_BODY_MAPPING.items():
+        #     if index in data_bodypose and body_part in data_meta:
+        #         if "left" in body_part:
+        #             meta_left_hand.append([data_meta[body_part]['x'], data_meta[body_part]['y'], data_meta[body_part]['z']])
+        #             body_left_hand.append([data_bodypose[index]['x'], data_bodypose[index]['y'], data_bodypose[index]['z']])
+        #         elif "right" in body_part:
+        #             meta_right_hand.append([data_meta[body_part]['x'], data_meta[body_part]['y'], data_meta[body_part]['z']])
+        #             body_right_hand.append([data_bodypose[index]['x'], data_bodypose[index]['y'], data_bodypose[index]['z']])
+
+        # points_bodypose.append(np.mean(body_left_hand, axis=0))
+        # points_bodypose.append(np.mean(body_right_hand, axis=0))
+        # points_meta.append(np.mean(meta_left_hand, axis=0))
+        # points_meta.append(np.mean(meta_right_hand, axis=0))
+
+        if 'head' in data_bodypose and 'head' in data_meta:
+            points_bodypose.append([data_bodypose['head']['x'], data_bodypose['head']['y'], data_bodypose['head']['z']])
+            points_meta.append([data_meta['head']['x'], data_meta['head']['y'], data_meta['head']['z']])
+    
+    elif tr == "rotation":
+        # for index, body_part in META_BODY_MAPPING.items():
+        #     if index in data_bodypose and body_part in data_meta:
+        #         points_bodypose.append([data_bodypose[index]['x'], data_bodypose[index]['y'], data_bodypose[index]['z']])
+        #         points_meta.append([data_meta[body_part]['x'], data_meta[body_part]['y'], data_meta[body_part]['z']])
+
+        meta_right_hand = []
+        body_right_hand = []
+        meta_left_hand = []
+        body_left_hand = []
+
+        for index, body_part in META_BODY_MAPPING.items():
+            if index in data_bodypose and body_part in data_meta:
+                if "left" in body_part:
+                    meta_left_hand.append([data_meta[body_part]['x'], data_meta[body_part]['y'], data_meta[body_part]['z']])
+                    body_left_hand.append([data_bodypose[index]['x'], data_bodypose[index]['y'], data_bodypose[index]['z']])
+                elif "right" in body_part:
+                    meta_right_hand.append([data_meta[body_part]['x'], data_meta[body_part]['y'], data_meta[body_part]['z']])
+                    body_right_hand.append([data_bodypose[index]['x'], data_bodypose[index]['y'], data_bodypose[index]['z']])
+
+        points_bodypose.append(np.mean(body_left_hand, axis=0))
+        points_bodypose.append(np.mean(body_right_hand, axis=0))
+        points_meta.append(np.mean(meta_left_hand, axis=0))
+        points_meta.append(np.mean(meta_right_hand, axis=0))
+
+        if 'head' in data_bodypose and 'head' in data_meta:
+            points_bodypose.append([data_bodypose['head']['x'], data_bodypose['head']['y'], data_bodypose['head']['z']])
+            points_meta.append([data_meta['head']['x'], data_meta['head']['y'], data_meta['head']['z']])
+    
+    return np.array(points_meta), np.array(points_bodypose)
+
+
+def get_data_around_t(data:dict, timestamp) -> dict:
     """
     Returns data +- 1 sec around a specific timestamp
     """
     # Find the index of the timestamp
     one_second = 1  # One second in terms of timestamp units
-    data_at_t = []
+    data_around_t = {}
 
     # Early exit if the timestamp is out of the range of the data
-    if data_metaquest:
-        min_time = data_metaquest[0]["Timestamp"]
-        max_time = data_metaquest[-1]["Timestamp"]
-        if t < min_time - one_second or t > max_time + one_second:
+    if data:
+        timestamps = list(data.keys())
+        min_time = timestamps[0]
+        max_time = timestamps[-1]
+        if timestamp < min_time - one_second or timestamp > max_time + one_second:
             print("Timestamp out of range")
-            return data_at_t
+            return data_around_t
 
     # Iterate through each entry and check if it's within the ±1 second range
-    for entry in data_metaquest:
-        if t - one_second <= entry["Timestamp"] <= t + one_second:
-            data_at_t.append(entry)
+    for t, d in data.items():
+        if timestamp - one_second <= t <= timestamp + one_second:
+            data_around_t[t] = d
 
-    return data_at_t
+    return data_around_t
 
-def get_bodypose_data_at_t(data_bodypose, t):
-    return data_bodypose[str(t)]["Landmark"]
 
-def get_first_common_t(data_metaquest, data_bodypose, delta_ms):
-    """Returns first common timestamp within threshold delta_ms."""
+def get_first_common_t(data1:dict, data2:dict, delta_ms) -> tuple:
+    """
+    Returns first common timestamp within threshold delta_ms.
+    
+    :return: (t1, t2) or None if no common timestamp is found.
+    """
 
+    # Convert delta to seconds
     delta_ms = delta_ms/1000
 
     # Iterate through each timestamp in the first dataset
-    for entry1 in data_metaquest:
-        t_meta = entry1['Timestamp']
-
+    for t1 in data1.keys():
         # Check each timestamp in the second dataset
-        for t_body in data_bodypose.keys():
+        for t2 in data2.keys():
             # Compare the timestamps within the allowed delta
-            if abs(t_meta - float(t_body)) <= delta_ms:
-                return t_meta, t_body
+            if abs(float(t1) - float(t2)) <= delta_ms:
+                return float(t1), float(t2)
 
-    return None
+    raise ValueError("No common timestamp found within threshold.")
 
-def get_matching_timestamps_from_t(data_metaquest, data_bodypose, first_common_t, delta):
+
+def _dict_to_numpy(data:dict):
+    """(Helper function) Converts a dictionary of coordinates to a NumPy array."""
+    coordinates = []
+
+    for coords in data.values():
+        coordinates.append((coords['x'], coords['y'], coords['z']))
+    
+    # Convert list of tuples to a NumPy array
+    return np.array(coordinates)
+
+
+def get_relevant_data(data:dict):
     """
-    Match data to the nearest target time.
-
-    retunrs: List[tuple(t_metaquest, t_bodypose)]
+    Returns only the relevant data for the transformation.
     """
 
-    t_bodypose = [float(t) for t in data_bodypose.keys() if float(t) >= first_common_t]
-    t_metaquest = [entry['Timestamp'] for entry in data_metaquest if entry['Timestamp'] >= first_common_t]
+    # TODO: INCLUDE HEAD IN BOTH DATASETS
+    def _is_bodypose_data(d): # Helper function
+        try:
+            int(d)
+            return True
+        except ValueError:
+            return False
+    
+    # Check if data is bodypose or metaquest
+    is_bodypose = _is_bodypose_data(next(iter(data[next(iter(data))])))
+
+    if is_bodypose:
+        rel_data = {}
+        for t, d in data.items():
+            head_joints_list = [str(i) for i in range(0, 9)]
+            rel_joints = {key: value for key, value in d.items() if key in META_BODY_MAPPING.keys()}
+
+            # Calculate head position
+            head_joints = [value for key, value in d.items() if key in head_joints_list]
+            head_joints = [[i['x'], i['y'], i['z']] for i in head_joints]
+            head = np.mean(head_joints, axis=0)
+
+            # Add head to relevant joints
+            rel_joints['head'] = {'x': head[0], 'y': head[1], 'z': head[2]}
+            rel_data[t] = rel_joints
+
+    else: # if is metaquest data
+        rel_data = {}
+        for t, d in data.items():
+            # Only keep left of hand data
+            rel_joints = {key: value for key, value in d.items() if key in META_BODY_MAPPING.values()}
+            rel_joints['head'] = d['head'].copy()
+            rel_data[t] = rel_joints
+
+    return rel_data
+
+
+def sync_data(data_bodypose:dict, data_metaquest:dict, t_start_bodypose, t_start_lefthand):
+    """
+    Sets datasets into same time frame, starting from the first common timestamp
+
+    :return: (data_bodypose, data_metaquest)
+    """
+
+    # Sychronise starts of data
+    data_bodypose = {t: d for t, d in data_bodypose.items() if float(t) >= t_start_bodypose}
+    data_metaquest = {t: d for t, d in data_metaquest.items() if float(t) >= t_start_lefthand}
+
+    # Add difference of timestamps to bodypose timestamps to synchronise start
+    delta_t = t_start_lefthand - t_start_bodypose
+    new_data_bodypose = {round(1000*(float(t) + delta_t))/1000: d for t, d in data_bodypose.items()}
+
+    return new_data_bodypose, data_metaquest
+
+
+def match_data(data_metaquest:dict, data_bodypose:dict, delta_ms):
+    """
+    Finds point in time in both datasets where points are closest.
+    
+    :return: (data_metaquest, data_bodypose)
+    """
+    # NOTE: THIS CODE MIGHT BE PRONE TO ROTATIONS!!!
+
+    # Goal is to find the first common timestamp of the two datasets
+    # Common timestamp = first datapoint of bodypose and metaquest that are within delta_ms of each other
+    first_t_meta, first_t_body = get_first_common_t(data_metaquest, data_bodypose, delta_ms)
+
+    # Get data at first common timestamp
+    # MetaQuest data is gathered around 1 sec before and after the timestamp
+    # This is due to the exact timestamp of the MetaQuest (bodypose only second precision)
+    metaquest_data_at_t = get_data_around_t(data_metaquest, first_t_meta)
+    body_pose_data_at_t = _get_data_at_t(data_bodypose, first_t_body)
+
+    r_meta= get_relevant_data(metaquest_data_at_t)
+    r_bodypose = get_relevant_data(body_pose_data_at_t)
+
+    # Plan: transform data1 to data2 and calculate the distance for each timestamp
+    # Return data for which distance is minimal
+    distances = []
+
+    for t2, d2 in r_bodypose.items():
+        for t1, d1 in r_meta.items():
+            # Convert dictionaries to numpy arrays
+            np_d1_t, np_d2_t = prepare_points_for_transformation(data_meta=d1, data_bodypose=d2, tr="translation")
+            np_d1_r, np_d2_r = prepare_points_for_transformation(data_meta=d1, data_bodypose=d2, tr="rotation")
+
+            # Calculate the optimal rotation matrix, scaling factor, and translation vector
+            t = kabsch_scaling(np_d1_t, np_d2_t, get="translation")
+            R = kabsch_scaling(np_d1_r, np_d2_r, get="rotation")
+
+            transformed_d1 = transform_points(np_d1_r, R, t)
+
+            distances.append((_calculate_distance(transformed_d1, np_d2_r), t1, t2))
+
+    # Find the minimum distance
+    min_distance, closest_t_meta, closest_t_body = min(distances, key=lambda x: x[0])
+    # print(f"Min distance: {min_distance} at t_meta: {closest_t_meta} and t_body: {closest_t_body}")
+
+    data_bodypose, data_metaquest = sync_data(data_bodypose, data_metaquest, closest_t_body, closest_t_meta)
+
+    return data_metaquest, data_bodypose
+
+
+def align_data(data1, data2, delta_ms):
+    """
+    Aligns two datasets based on their timestamps. Outputs datasets with common timestamps and same length.
+
+    returns: (new_data1, new_data2, time_differences)
+    """
+
+    # First timestamp is already synchronised
+    t1_list = [float(t) for t in data1.keys()]
+    t2_list = [float(t) for t in data2.keys()]
 
     reg_idx = 0
-    matched_results = []
+    new_data1 = {}
+    new_data2 = {}
     t_diff = []
 
     # Loop through the irregular timestamps and match to the nearest target time
-    for t_meta in t_metaquest:
+    for t1 in t1_list:
         # Advance the regular index to find the closest regular timestamp
-        while reg_idx < len(t_bodypose) - 1 and abs(t_bodypose[reg_idx + 1] - t_meta) < abs(t_bodypose[reg_idx] - t_meta):
+        while reg_idx < len(t2_list) - 1 and abs(t2_list[reg_idx + 1] - t1) < abs(t2_list[reg_idx] - t1):
             reg_idx += 1
 
-        if reg_idx < len(t_bodypose) and abs(t_bodypose[reg_idx] - t_meta) <= delta/1000:
-            matched_results.append((t_meta, t_bodypose[reg_idx]))
+        if reg_idx < len(t2_list) and abs(t2_list[reg_idx] - t1) <= delta_ms/1000:
+            # Keep only data points that are within the delta_ms threshold
+            new_data1[t1] = data1[t1]
+            new_data2[t2_list[reg_idx]] = data2[t2_list[reg_idx]]
             
             # Keep track of time differences
-            t_diff.append(abs(t_bodypose[reg_idx] - t_meta))       
+            t_diff.append(abs(t2_list[reg_idx] - t1))
     
-    return matched_results, t_diff
+    return new_data1, new_data2, t_diff
 
 
-def get_optimal_meta_timestamp(data_metaquest, data_bodypose):
-    """
-    Finds the timestamp in the detailed dataset that has the closest match to the simple dataset.
+# def kabsch_scaling(points_metaquest, points_bodypose):
+#     """
+#     Calculates the optimal rotation matrix and scaling factor to align two sets of points.
     
-    :return: (Closest timestamp meta, relevant meta data, min distance)
+#     :param points_metaquest: Nx3 numpy array of points (simple data).
+#     :param points_bodypose: Nx3 numpy array of corresponding points (detailed data).
+#     :return: Tuple containing the rotation matrix, scaling factor, and translation vector.
+#     """
+
+#     # print(f"Shape points_metaquest: {points_metaquest.shape}, shape points_bodypose: {points_bodypose.shape}")
+#     # Step 1: Translate points to their centroids
+#     centroid_meta = np.mean(points_metaquest, axis=0)
+#     centroid_body = np.mean(points_bodypose, axis=0)
+#     points_meta_centered = points_metaquest - centroid_meta
+#     points_body_centered = points_bodypose - centroid_body
+    
+#     # Step 2: Compute the covariance matrix
+#     H = np.dot(points_body_centered.T, points_meta_centered)
+
+#     U, S, Vt = np.linalg.svd(H) # Singular Value Decomposition
+
+#     R = np.dot(Vt.T, U.T)
+
+#     # special reflection case
+#     if np.linalg.det(R) < 0:
+#         Vt[2, :] *= -1
+#         R = np.dot(Vt.T, U.T)
+
+#     t = centroid_meta - np.dot(R, centroid_body)
+
+#     return R, t
+
+def kabsch_scaling(points_metaquest, points_bodypose, get):
     """
-
-    # NOTE: THIS CODE MIGHT BE PRONE TO ROTATIONS!!!
-
-    min_distance = float('inf')
-    closest_timestamp_meta = None
-    rel_meta_data = {}
-
-    # Joint mapping based on assumed similarity or logical match
-    joint_mapping = {
-        '16': 'Wrist',  # Example mapping, adjust according to actual joint correspondence
-        '18': 'Hand_PinkyProximal',  # Assuming you map these based on your knowledge of the datasets
-        '20': 'Hand_MiddleProximal',
-    }
-
-    for entry in data_metaquest:
-        total_distance = 0
-        for simple_key, detailed_key in joint_mapping.items():
-            if detailed_key in entry['Position_rotation']:
-                total_distance += _calculate_distance(data_bodypose[simple_key], entry['Position_rotation'][detailed_key])
-        
-        if total_distance < min_distance:
-            min_distance = total_distance
-            closest_timestamp_meta = entry['Timestamp']
-            rel_meta_data = {simple_key: entry['Position_rotation'][joint_mapping[simple_key]] for simple_key in joint_mapping.keys()}
-
-
-    return closest_timestamp_meta, rel_meta_data, min_distance
-
-
-
-
-
-def kabsch_scaling(points_metaquest, points_bodypose):
-    """
-    Calculates the optimal rotation matrix and scaling factor to align two sets of points.
+    Calculates the optimal rotation matrix (around X and Z axes) and translation vector to align two sets of points.
     
     :param points_metaquest: Nx3 numpy array of points (simple data).
     :param points_bodypose: Nx3 numpy array of corresponding points (detailed data).
-    :return: Tuple containing the rotation matrix, scaling factor, and translation vector.
+    :return: Tuple containing the rotation matrix and translation vector.
     """
-    
-    # Step 1: Translate points to their centroids
-    centroid_p = np.mean(points_metaquest, axis=0)
-    centroid_q = np.mean(points_bodypose, axis=0)
-    p_centered = points_metaquest - centroid_p
-    q_centered = points_bodypose - centroid_q
-    
-    # Step 2: Compute the covariance matrix
-    H = np.dot(p_centered.T, q_centered)
 
+    assert get in ["rotation", "translation"], "Invalid 'get'. Choose 'rotation' or 'translation'."
+
+    centroid_meta = np.mean(points_metaquest, axis=0)
+    centroid_body = np.mean(points_bodypose, axis=0)
+
+    if get == "translation":
+        return centroid_meta - centroid_body
+
+    points_meta_centered = points_metaquest - centroid_meta
+    points_body_centered = points_bodypose - centroid_body
+
+    H = np.dot(points_body_centered.T, points_meta_centered)
     U, S, Vt = np.linalg.svd(H)
 
     R = np.dot(Vt.T, U.T)
-
-    # special reflection case
     if np.linalg.det(R) < 0:
-        # print("Reflection detected")
         Vt[2, :] *= -1
-        R = Vt.T * U.T
+        R = np.dot(Vt.T, U.T)
 
-    scale = np.sum(S) / np.sum(p_centered ** 2)
-    t = - np.dot(R,centroid_q.T) + centroid_p.T
+    # Extract the rotation around the Y axis
+    beta = np.arctan2(R[0, 2], R[2, 2])
 
-    return R, scale, t
+    # Construct the rotation matrix around the Y axis
+    Ry1 = np.array([
+        [np.cos(beta), 0, np.sin(beta)],
+        [0, 1, 0],
+        [-np.sin(beta), 0, np.cos(beta)]
+    ])
+
+    Ry2 = np.array([
+        [np.cos(beta), 0, -np.sin(beta)],
+        [0, 1, 0],
+        [np.sin(beta), 0, np.cos(beta)]
+    ])
+
+    transformed_bodypose1 = np.dot(points_body_centered, Ry1.T)
+    transformed_bodypose2 = np.dot(points_body_centered, Ry2.T)
+
+    dist1 = np.linalg.norm(points_meta_centered - transformed_bodypose1)
+    dist2 = np.linalg.norm(points_meta_centered - transformed_bodypose2)
+
+    if dist1 < dist2:
+        return Ry1
+    else:
+        return Ry2
 
 
-def transform_points(points, R, scale, t):
-    """
-    Applies the rotation matrix, scaling factor, and translation vector to the points.
-    """
-    scaled_points = points * scale
-    rotated_points = np.dot(scaled_points, R.T)
-    transformed_points = rotated_points + t.T
-    return transformed_points
+def transform_points(points:np.array, R, t):
+    return np.dot(points, R.T) + t
 
-def process_data(meta_data_path, body_pose_path, output_path, delta_ms=30):
 
+def _output_data(data, output_path):
+    """(Helper function) Output the transformed data to a JSON file."""
+    with open(output_path, 'w') as file:
+        json.dump(data, file, indent=4)
+
+def get_formatted_meta_data(meta_data_path, key1:str, key2:str):
+
+    assert key1.lower() in ["left", "right", "camera"], "Invalid key1. Choose 'left', 'right' or 'camera'."
+
+    try:
+        data_filename = [i for i in os.listdir(meta_data_path) if key1 in i.lower() and key2 in i.lower()][0]
+    except IndexError:
+        print(f"Error: No file found for {key1} {key2}.")
+        return {}
+    
+    data_path = os.path.join(meta_data_path, data_filename)
+    with open(data_path, 'r') as file:
+        data = json.load(file)
+        data = _format_meta_data(data['Entries'], l_r_c=key1) # Remove Entries if not in data anymore
+
+    return data
+
+def process_data(meta_data_path, body_pose_path, output_path, delta_ms=30, postprocess=False):
 
     # =====================
     # Step 1: Load the data
     # =====================
 
     # Load LEFT HAND from metaquest data
-    left_hand_data_filename = [i for i in os.listdir(meta_data_path) if "left" and "hand" in i.lower()][0]
-    left_hand_data_path = os.path.join(meta_data_path, left_hand_data_filename)
-    with open(left_hand_data_path, 'r') as file:
-        data_lefthand = json.load(file)
-        data_lefthand = _format_data(data_lefthand['Entries']) # Remove Entries if not in data anymore
+    data_lefthand = get_formatted_meta_data(meta_data_path, "left", "hand")
+    data_righthand = get_formatted_meta_data(meta_data_path, "right", "hand")
+    data_head = get_formatted_meta_data(meta_data_path, "camera", "position")
+
+    if data_lefthand == {} or data_righthand == {} or data_head == {}: # Check if data is empty
+        print(f"Error: No data found in {meta_data_path}.")
+        return
+    
+    data_metaquest = _merge_n_datasets(40, data_lefthand, data_righthand, data_head)
 
     # Load body pose data
     with open(body_pose_path, 'r') as file:
         data_bodypose = json.load(file)
 
+        # Check if the data is in the correct format
+        assert data_bodypose['landmark_type'].lower() == 'landmark', f"Landmark type is not 'landmark' but {data_bodypose['landmark_type']}. This script only supports world poses."
+        data_bodypose.pop('landmark_type')
+
     # ============================
     # Step 2: Synchronize the data
     # ============================
 
-    # Goal is to find the first common timestamp of the two datasets
-    # Common timestamp = first datapoint of bodypose and metaquest that are within delta_ms of each other
-    first_t_meta, first_t_body = get_first_common_t(data_lefthand, data_bodypose, delta_ms)
+    data_metaquest, data_bodypose = match_data(data_metaquest=data_metaquest, data_bodypose=data_bodypose, delta_ms=delta_ms)
 
-    # Get data at first common timestamp
-    # MetaQuest data is gathered around 1 sec before and after the timestamp
-    # This is due to the exact timestamp of the MetaQuest (bodypose only second precision)
-    metaquest_data_at_t = get_metaquest_data_at_t(data_lefthand, first_t_meta)
-    body_pose_data_at_t = get_bodypose_data_at_t(data_bodypose, first_t_body)
-
-    
-    # Get timestamp of MetaQuest data that is closest to the bodypose data (min. distance of relevant joints)
-    closest_t_meta, relevant_meta_data, _ = get_optimal_meta_timestamp(metaquest_data_at_t, body_pose_data_at_t)
-    # print(f"Best matching MetaQuest timestamp around first common timestamp: {closest_t_meta} with min_distance: {min_distance}")
-
-    # Isolate timestamps of common data points (within delta_ms of each other), starting from the first common timestamp
-    # TODO: IS FIRST COMMON TIMESTAMP INCLUDED IN COMMON T?
-    common_t, _ = get_matching_timestamps_from_t(data_lefthand, data_bodypose, closest_t_meta, delta_ms)
+    data_metaquest, data_bodypose, differences = align_data(data1=data_metaquest, data2=data_bodypose, delta_ms=delta_ms)
+    # print(f"mean time difference: {np.mean(differences)}")
 
     # for debugging
     db = []
     da = []
 
+    # Save data
+    new_bodypose = {}
+
     # Iterate over all common timestamps and calculate the optimal transformation
-    for idx, (t_meta, t_body) in enumerate(common_t):
+    for (t_meta, d_meta), (t_bodypose, d_bodypose) in zip(data_metaquest.items(), data_bodypose.items()):
 
-        metaquest_data_at_t = get_metaquest_data_at_t(data_lefthand, t_meta)
-        body_pose_data_at_t = get_bodypose_data_at_t(data_bodypose, t_body)
-
-        _, relevant_meta_data, _ = get_optimal_meta_timestamp(metaquest_data_at_t, body_pose_data_at_t)
+        rel_data_metaquest = get_relevant_data({t_meta: d_meta})
+        rel_data_bodypose = get_relevant_data({t_bodypose: d_bodypose})
 
         # ================================
         # Step 3: Calculate transformation
         # ================================
-
-        # 15: left_Wrist, 17: left_Hand_PinkyProximal, 19: Hand_MiddleProximal
-        # only keep left hand data of bodypose = keep keys of list
-        relevant_bodypose_data_at_t = {key: value for key, value in body_pose_data_at_t.items() if key in ['15', '17', '19']}
         
         # Convert dictionaries to numpy arrays
-        np_relevant_meta_data = _dict_to_numpy(relevant_meta_data)
-        np_relevant_bodypose_data = _dict_to_numpy(relevant_bodypose_data_at_t)
-
-        # print("Before transformation distances:", np.linalg.norm(np_relevant_meta_data - np_relevant_bodypose_data, axis=1))
-
+        # np_rel_data_meta, np_rel_data_bodypose = prepare_points_for_transformation(data_bodypose=rel_data_bodypose_head[t_bodypose], data_meta=rel_data_metaquest_head[t_meta])
+        np_rel_data_meta_t, np_rel_data_bodypose_t = prepare_points_for_transformation(data_bodypose=rel_data_bodypose[t_bodypose], 
+                                                                                       data_meta=rel_data_metaquest[t_meta], 
+                                                                                       tr="translation")
+        
+        np_rel_data_meta_r, np_rel_data_bodypose_r = prepare_points_for_transformation(data_bodypose=rel_data_bodypose[t_bodypose], 
+                                                                                       data_meta=rel_data_metaquest[t_meta], 
+                                                                                       tr="rotation")
         # Calculate the optimal rotation matrix, scaling factor, and translation vector
-        R, scale, t = kabsch_scaling(np_relevant_meta_data, np_relevant_bodypose_data)
+        t = kabsch_scaling(np_rel_data_meta_t, np_rel_data_bodypose_t, get="translation")
+        R = kabsch_scaling(np_rel_data_meta_r, np_rel_data_bodypose_r, get="rotation")
+    
+        transformed_data_bodypose = transform_points(_dict_to_numpy(d_bodypose), R, t)
 
-        # print(f"Rotation matrix:\n{R}")
-        # print(f"Scaling factor: {scale}")
-        # print(f"Translation vector: {t}")
-
-        transformed_bodypose_data = transform_points(np_relevant_bodypose_data, R, scale, t)
-
-        if idx == 0:
-            plot_data(np_relevant_meta_data, np_relevant_bodypose_data, transformed_bodypose_data)
-
-        # print("After transformation distances:", np.linalg.norm(np_rel_meta_data - transformed_body_pose_data, axis=1))
+        # Bring bodypose data back into dictionary format
+        new_bodypose[t_bodypose] = {str(i): {'x': lm[0], 'y': lm[1], 'z': lm[2]} for i, lm in enumerate(transformed_data_bodypose)}
+        
+        # Performance assessment
+        transformed_rel_data_bodypose = transform_points(np_rel_data_bodypose_r, R, t)
 
         # ====================================
         # (DEBUGGING) Calculate mean distances
         # ====================================
 
-        distances_before = np.abs(np_relevant_meta_data - np_relevant_bodypose_data)
-        distances_after = np.abs(np_relevant_meta_data - transformed_bodypose_data)
+        distances_before = np.abs(np_rel_data_meta_r - np_rel_data_bodypose_r)
+        distances_after = np.abs(np_rel_data_meta_r - transformed_rel_data_bodypose)
 
         db.append(distances_before)
         da.append(distances_after)
@@ -361,56 +592,68 @@ def process_data(meta_data_path, body_pose_path, output_path, delta_ms=30):
     print(f"Mean distance before transformation: {np.mean(db, axis=0)}")
     print(f"Mean distance after transformation: {np.mean(da, axis=0)}")
 
+    # Output the transformed data
+    _output_data(new_bodypose, os.path.join(output_path, "bodypose.json"))
+
+    # Output cleaned meta data
+    first_meta_t = next(iter(data_metaquest))
+    meta_lefthand_from_t = {t: d for t, d in data_lefthand.items() if float(t) >= first_meta_t-delta_ms/1000}
+    _output_data(meta_lefthand_from_t, os.path.join(output_path, "meta_lefthand.json"))
+
+
+    meta_right_hand_from_t = {t: d for t, d in data_righthand.items() if float(t) >= first_meta_t-delta_ms/1000}
+    _output_data(meta_right_hand_from_t, os.path.join(output_path, "meta_righthand.json"))
+
+    meta_head_from_t = {t: d for t, d in data_head.items() if float(t) >= first_meta_t-delta_ms/1000}
+    _output_data(meta_head_from_t, os.path.join(output_path, "meta_head.json"))
+
+    # Postprocess the files
+    if postprocess:
+        process_folder(output_path)
 
 
 def main():
 
     parser = argparse.ArgumentParser(description="Synchronize hand pose data from MetaQuest and body pose data.")
-    parser.add_argument("--data_csv", type=str, default=os.path.join(utils.DATA_DIR, "data_mapping.csv"),
-                        help="Path to the MetaQuest left hand pose data file.")
-    parser.add_argument("--output_dir", type=str, default=os.path.join(utils.OUTPUT_DIR, "body_pose", "final_recordings"),
+    parser.add_argument("--data_meta", type=str,
+                        help="Path to MetaQuest data directory.")
+    parser.add_argument("--data_bodypose", type=str,
+                        help="Path to the body pose data.")
+    parser.add_argument("--output_dir", type=str, default=os.path.join(utils.OUTPUT_DIR, 'final'),
                         help="Path to the output directory.")
+    parser.add_argument("--set_output_name", type=str,
+                        help="Set the name of the output directory.")
     parser.add_argument("--delta", type=int, default=30,
                         help="Time difference threshold in milliseconds.")
+    parser.add_argument("--postprocess", action="store_true",
+                        help="Translate output into unity format.")
 
     args = parser.parse_args()
 
-    # Check if data mapping file exists
-    if not os.path.isfile(args.data_csv):
-        print(f"Error: Data file not found at {args.data_csv}.")
-        exit(1)
+    args.output_dir = _create_necessary_folders_sync_hand_poses(args.output_dir, set_output_name=args.set_output_name)
 
-    # Ensure that output directory exists
-    if not os.path.exists(args.output_dir):
-        os.makedirs(args.output_dir)
+    # Load meta bodypose mapping
+    with open(os.path.join(utils.BODY_POSE_DIR, "meta_bodypose_mapping.json"), 'r') as file:
+        global META_BODY_MAPPING
+        META_BODY_MAPPING = json.load(file)
+        META_BODY_MAPPING = META_BODY_MAPPING['index_to_body_part']
 
-    mappings = pd.read_csv(args.data_csv, index_col="id")
+        # Check if keys are convertable to type int and values are type str
+        assert all(isinstance(int(k), int) for k in META_BODY_MAPPING.keys()), f"{os.path.join(utils.BODY_POSE_DIR, 'meta_bodypose_mapping.json')} must contain ints as keys."
 
-    for index, recording in mappings.iterrows():
-        
-        # =====================================
-        # Set paths and ensure folder structure
-        # =====================================
+    # Get correct bodypose data
+    body_pose_name = [v for v in os.listdir(args.data_meta) if v.lower().endswith(".mov") or v.lower().endswith(".mp4")]
 
-        if os.path.exists(recording["meta_data"]):
-            meta_data_path = recording["meta_data"]
-        else:
-            meta_data_path = os.path.join(utils.DATA_DIR, "meta_quest", recording["meta_data"])
+    if len(body_pose_name) == 0:
+        print(f"Tried to get bodypose name from {args.data_meta} but found no corresponding video file.")
+    elif len(body_pose_name) > 1:
+        print(f"Found multiple video files in {args.data_meta}. Using {body_pose_name[0].rsplit('.')[0]} as bodypose data.")
 
-        if os.path.exists(recording["body_pose_media"]):
-            body_pose_path = recording["body_pose_media"]
-        else:
-            body_pose_path = os.path.join(utils.OUTPUT_DIR, "body_pose", "processed", recording["body_pose_media"].split(".")[0] + "_p.json")
+    body_pose_name = body_pose_name[0].rsplit('.')[0]
+    args.data_bodypose = os.path.join(args.data_bodypose, f"{body_pose_name}.json")
     
-        # Set output path
-        if pd.isna(recording["final_name"]) or recording["final_name"].strip() == "":
-            output_path = os.path.join(args.output_dir, f"session_{index}")
-            os.makedirs(output_path, exist_ok=True)
-        else:
-            output_path = os.path.join(args.output_dir, recording["final_name"])
-            os.makedirs(output_path, exist_ok=True)
-
-        process_data(meta_data_path, body_pose_path, output_path, args.delta)
+    # Process data
+    process_data(args.data_meta, args.data_bodypose, args.output_dir, args.delta, args.postprocess)
 
 if __name__ == "__main__":
     main()

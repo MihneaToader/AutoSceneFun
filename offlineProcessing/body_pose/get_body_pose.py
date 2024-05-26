@@ -20,10 +20,14 @@ import argparse
 import os
 
 from utils import *
+from utils.tools.setup_folder_structure import _create_necessary_folders_bodypose
 
 
 class BodyPose():
     def __init__(self, media_path, model_path, output_folder, visualise=False, debugg=False, landmarks:str="landmark"):
+        
+        assert landmarks.lower() in ["landmark", "normalized_landmark"], "Invalid landmark type. Choose either 'landmark' or 'normalized_landmark'"
+        
         self.media_path = media_path
         self.model_path = model_path
         self.output_folder = output_folder
@@ -33,7 +37,7 @@ class BodyPose():
 
         self.filename = os.path.basename(self.media_path).split(".")[0]
 
-        self.landmarks = landmarks.lower() # Either "landmark" or "normalized_landmark"
+        self.landmark_type = landmarks.lower() # Either "landmark" or "normalized_landmark"
 
         self.creation_time = self._get_data_creation_date(self.media_path)
 
@@ -84,17 +88,19 @@ class BodyPose():
 
             # Save results to json file
             # World joint positions
-            if self.landmarks == "landmark":
+            if self.landmark_type == "landmark":
                 if results.pose_world_landmarks:
                     landmarks_dict = {
-                        str(self.creation_time): {'Landmark': {i: {
-                            'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence': lm.presence} for i, lm in enumerate(results.pose_world_landmarks[0])}}}
+                        "landmark_type": "Landmark",
+                        str(self.creation_time): {i: {
+                            'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence': lm.presence} for i, lm in enumerate(results.pose_world_landmarks[0])}}
 
-            elif self.landmarks == "normalized_landmark":
+            elif self.landmark_type == "normalized_landmark":
                 if results.pose_landmarks:
                     landmarks_dict = {
-                        str(self.creation_time): {'NormalizedLandmark':{i: 
-                            {'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for i, lm in enumerate(results.pose_landmarks[0])}}}
+                        "landmark_type": "NormalizedLandmark",
+                        str(self.creation_time): {i: 
+                            {'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence':lm.presence} for i, lm in enumerate(results.pose_landmarks[0])}}
 
             with open(self.output_path, 'w') as f:
                 json.dump(landmarks_dict, f, indent=4)
@@ -137,7 +143,7 @@ class BodyPose():
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(self.visualisation_output_path, fourcc, fps, (frame_width, frame_height))
 
-        pose_data = {}
+        pose_data = {"landmark_type": self.landmark_type}
 
         try:
              # Create PoseLandmarker object
@@ -177,17 +183,17 @@ class BodyPose():
                         global_timestamp = self.creation_time + timestamp_ms / 1000
 
                         # Usually landmarks are saved, not normalised landmarks
-                        if self.landmarks == "landmark":
+                        if self.landmark_type == "landmark":
                             if results.pose_world_landmarks:
-                                landmarks_dict = {'Landmark': {i: {
-                                    'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence': lm.presence} for i, lm in enumerate(results.pose_world_landmarks[0])}}
+                                landmarks_dict = {i: {
+                                    'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence': lm.presence} for i, lm in enumerate(results.pose_world_landmarks[0])}
                                 pose_data[f"{global_timestamp}"] = landmarks_dict
 
 
-                        elif self.landmarks == "normalized_landmark":
+                        elif self.landmark_type == "normalized_landmark":
                             if results.pose_landmarks:
-                                landmarks_dict = {'NormalizedLandmark': {i: {
-                                    'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence': lm.presence} for i, lm in enumerate(results.pose_landmarks[0])}}
+                                landmarks_dict = {i: {
+                                    'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence': lm.presence} for i, lm in enumerate(results.pose_landmarks[0])}
                                 pose_data[f"{global_timestamp}"] = landmarks_dict
 
 
@@ -268,9 +274,12 @@ def _create_necessary_folders(output_path, debugg=False):
 def process_data(args):
     if os.path.isdir(args.data):
         if args.mode.lower() == "video":
-            data = [i for i in os.listdir(args.data) if i.lower().endswith(".mov") or i.lower().endswith(".mp4")]
+            filenames = [i for i in os.listdir(args.data) if i.lower().endswith(".mov") or i.lower().endswith(".mp4")]
+            data = [os.path.join(args.data, i) for i in filenames]
+
         elif args.mode.lower() == "image":
-            data = [i for i in os.listdir(args.data) if i.lower().endswith(".jpg")]
+            filenames = [i for i in os.listdir(args.data) if i.lower().endswith(".jpg")]
+            data = [os.path.join(args.data, i) for i in filenames]
         
     elif {os.path.isfile(args.data) 
           and args.data.lower().endswith(".jpg") 
@@ -283,17 +292,16 @@ def process_data(args):
     
     # Process images
     for d in data:
-        image_path = os.path.join(args.data, d)
-        body_pose = BodyPose(image_path, args.model, args.output, args.visualise, args.debugg)
+        body_pose = BodyPose(d, args.model, args.output, args.visualise, args.debugg)
         body_pose._process_data(args.set_fps)
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("-d", "--data", type=str, help="Path to image, video or stream data folder")
+    parser.add_argument("-out", "--output", type=str, default=os.path.join(OUTPUT_DIR, 'body_pose'), help="Path to save output")
     parser.add_argument("-m", "--mode", type=str, default="Video", help="Generate pose from [Image, Video, Stream]")
     parser.add_argument("--model", type=str, default=os.path.join(MODELS_DIR, "pose_landmarker_heavy.task"), help="Path to model")
-    parser.add_argument("-d", "--data", type=str, default=os.path.join(DATA_DIR, "media"), help="Path to image, video or stream data folder")
     parser.add_argument("-v", "--visualise", action="store_true", help="Visualise results")
-    parser.add_argument("-out", "--output", type=str, default=os.path.join(OUTPUT_DIR, "body_pose"), help="Path to save output")
     parser.add_argument("-sf", "--set_fps", type=int, default=0, help="Set fps for video processing, 0 for original fps")
     parser.add_argument("--debugg", action="store_true", help="Debug mode")
     args = parser.parse_args()
@@ -301,7 +309,7 @@ def main():
     if args.mode.lower() not in ["image", "video"]:
         raise ValueError(f"{args.mode} not supported. Video and Stream to be implemented")
 
-    _create_necessary_folders(args.output, args.debugg)
+    _create_necessary_folders_bodypose(args.output, args.debugg)
 
     process_data(args)
 

@@ -19,14 +19,12 @@ class Pose:
 
     @staticmethod
     def load_from_data(data, timestamp):
-        if 'Landmark' not in data:
-            raise KeyError("Pose only supports 'Landmark'-data, no relative poses.")
 
         joint_names_path = os.path.join("models", "pose_landmarkers.json")
         with open(joint_names_path, 'r') as file:
             joint_names = json.load(file).values()
 
-        joint_data = [data['Landmark'][str(idx)] for idx in range(len(joint_names))]
+        joint_data = [data[str(idx)] for idx in range(len(joint_names))]
         joint_data = [[j['x'], j['y'], j['z']] for j in joint_data]
         return Pose(timestamp, list(joint_names), joint_data)
 
@@ -51,7 +49,7 @@ class Pose:
         self.joints -= center  # Shift all joints to center the pose between the eyes
 
     def pose_to_dict(self):
-        return {'Landmark': {i: {'x': lm[0], 'y': lm[1], 'z': lm[2]} for i, lm in enumerate(self.joints)}}
+        return {i: {'x': lm[0], 'y': lm[1], 'z': lm[2]} for i, lm in enumerate(self.joints)}
     
     def debug_draw(self, org_img_path, output_path):
         draw_processed_landmarks_on_image(self.joints, org_img_path, output_path)
@@ -86,6 +84,10 @@ def process_data(args):
                 # Load data
                 with open(file_path, 'r') as f:
                     data = json.load(f)
+                    # Check if correct landmark type
+                    assert data['landmark_type'].lower() == 'landmark', f"Landmark type is not 'landmark' but {data['landmark_type']}. This script only supports world poses."
+
+                    data.pop('landmark_type')
 
                 processed_data = {}
 
@@ -93,6 +95,7 @@ def process_data(args):
 
                 # Iterate over all timestamps
                 for timestamp, d in tqdm(data.items(), desc=f"Processing {file_name}, timestamp"):
+                    
                     p = Pose.load_from_data(d, timestamp)
 
                     # Shift pose origin to between eyes (change with desired pose shift function)
@@ -130,6 +133,11 @@ def process_data(args):
         # Load data
         with open(file_path, 'r') as f:
             data = json.load(f)
+
+            # Check if correct landmark type
+            assert data['landmark_type'].lower() == 'landmark', f"Landmark type is not 'landmark' but {data['landmark_type']}. This script only supports world poses."
+
+            data.pop('landmark_type')
 
         processed_data = {}
 

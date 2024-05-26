@@ -10,6 +10,12 @@
 For a visual guide, follow Black Whale Studio's [Get Started with Meta Quest Development in Unity](https://www.youtube.com/watch?v=BU9LYKM2TDc).\
 Additionally, in the Oculus App, in the Beta tab of the Settings, toggle "Developer Runtime Features" and then enable Passthrough, Point Cloud and Spatial Data. For ease of development, try to setup the Oculus Link if you're using Windows. It allows for quick debugging without having to build every time.
 
+*Disclaimer*: run 
+```
+git submodule update --init --recursive
+```
+to download the necessary submodules.
+
 ### File structure
 For the sake of privacy, room scans are not included in this repository. Access polybox and download the needed scans from the `data` folder. Unpack the contents of the archive in the Assets\Scans folder and you're ready to use them.
 
