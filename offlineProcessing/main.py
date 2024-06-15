@@ -106,16 +106,7 @@ def main():
     # ==============
 
     if args.visualise:
-<<<<<<< Updated upstream
-        # Get output path
-        visualise_meta_data_path = args.data
-
-        # Get source folder = latest folder generated
-        final_folders = [int(f) for f in os.listdir(os.path.join(args.output, 'final'))]
-        visualise_source_folder = os.path.join(args.output, 'final', str(max(final_folders)))
-=======
         args.VISUALISATION = os.path.join(args.OUTPUT_PATH, "visualisation")
->>>>>>> Stashed changes
 
         # Move data to correct folders
         include_files = ['audio_text.json', 'iPhoneMesh.json', 'roomMesh.obj', 'textured_output.obj']
