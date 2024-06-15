@@ -1,9 +1,4 @@
 import os
-import time as t
-import utils
-
-def get_session_index():
-    return int(t.time())
 
 
 # Function to create folder if it doesn't exist
@@ -11,28 +6,28 @@ def ensure_folder(path):
     if not os.path.exists(path):
         os.makedirs(path)
 
-def _create_necessary_folders_bodypose(output_path, debugg=False):
-        # Ensure the base output path exists
-        ensure_folder(output_path)
 
-        # Create subdirectories
-        subdirectories = ["media", "raw"]
+def _create_folder_structure(args, stage="preprocess"):
 
-        if debugg:
-            subdirectories.append("debugg")
-            subdirectories.append(os.path.join("debugg", "landmarks"))
-
-        for subdir in subdirectories:
-            ensure_folder(os.path.join(output_path, subdir))   
-
-def _create_necessary_folders_sync_hand_poses(output_path, set_output_name=None):
+    if stage not in ["preprocess", "postprocess"]:
+        raise ValueError("stage must be either 'preprocess' or 'postprocess'")
 
     # Ensure the base output path exists
-    ensure_folder(output_path)
+    ensure_folder(args.OUTPUT_PATH)
+    
+    if stage == "preprocess":
+        if not args.no_preprocess: # Create preprocess folders
+            ensure_folder(args.BODYPOSE_OUTPUT_PATH)
 
-    output_name = get_session_index() if set_output_name is None else set_output_name
-    session_folder_path = os.path.join(output_path, str(output_name))
+            # Create subdirectories
+            subdirectories = ["media", "raw"]
 
-    ensure_folder(session_folder_path)
+            if args.debug:
+                subdirectories.append("debug")
+                subdirectories.append(os.path.join("debug", "landmarks"))
 
-    return session_folder_path
+            for subdir in subdirectories:
+                ensure_folder(os.path.join(args.BODYPOSE_OUTPUT_PATH, subdir))
+    
+    if stage == "postprocess":
+        ensure_folder(args.HAND_POSE_OUTPUT_PATH)

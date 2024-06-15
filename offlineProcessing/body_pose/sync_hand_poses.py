@@ -8,8 +8,8 @@ import pandas as pd
 
 # Local modules
 import utils
-from utils.tools.setup_folder_structure import _create_necessary_folders_sync_hand_poses
-from body_pose.postprocess_meta_files import process_folder
+# from utils.tools.setup_folder_structure import _create_necessary_folders_sync_hand_poses
+from body_pose.postprocess_meta_files import process_folder as post_process_data
 
 # NOTE: exclude rotations in format_meta_data to speed up the code if needed
 
@@ -504,7 +504,12 @@ def get_formatted_meta_data(meta_data_path, key1:str, key2:str):
 
     return data
 
-def process_data(meta_data_path, body_pose_path, output_path, delta_ms=30, postprocess=False):
+def process_data(args):
+
+    meta_data_path = args.data
+    body_pose_path = args.PROCESSED_BODYPOSE_PATH
+    output_path = args.HAND_POSE_OUTPUT_PATH
+    delta_ms = args.delta
 
     # =====================
     # Step 1: Load the data
@@ -536,7 +541,6 @@ def process_data(meta_data_path, body_pose_path, output_path, delta_ms=30, postp
     data_metaquest, data_bodypose = match_data(data_metaquest=data_metaquest, data_bodypose=data_bodypose, delta_ms=delta_ms)
 
     data_metaquest, data_bodypose, differences = align_data(data1=data_metaquest, data2=data_bodypose, delta_ms=delta_ms)
-    # print(f"mean time difference: {np.mean(differences)}")
 
     # for debugging
     db = []
@@ -608,29 +612,11 @@ def process_data(meta_data_path, body_pose_path, output_path, delta_ms=30, postp
     _output_data(meta_head_from_t, os.path.join(output_path, "meta_head.json"))
 
     # Postprocess the files
-    if postprocess:
-        process_folder(output_path)
+    if not args.no_postprocess:
+        post_process_data(output_path)
 
 
-def main():
-
-    parser = argparse.ArgumentParser(description="Synchronize hand pose data from MetaQuest and body pose data.")
-    parser.add_argument("--data_meta", type=str,
-                        help="Path to MetaQuest data directory.")
-    parser.add_argument("--data_bodypose", type=str,
-                        help="Path to the body pose data.")
-    parser.add_argument("--output_dir", type=str, default=os.path.join(utils.OUTPUT_DIR, 'final'),
-                        help="Path to the output directory.")
-    parser.add_argument("--set_output_name", type=str,
-                        help="Set the name of the output directory.")
-    parser.add_argument("--delta", type=int, default=30,
-                        help="Time difference threshold in milliseconds.")
-    parser.add_argument("--postprocess", action="store_true",
-                        help="Translate output into unity format.")
-
-    args = parser.parse_args()
-
-    args.output_dir = _create_necessary_folders_sync_hand_poses(args.output_dir, set_output_name=args.set_output_name)
+def main(args):
 
     # Load meta bodypose mapping
     with open(os.path.join(utils.BODY_POSE_DIR, "meta_bodypose_mapping.json"), 'r') as file:
@@ -642,18 +628,17 @@ def main():
         assert all(isinstance(int(k), int) for k in META_BODY_MAPPING.keys()), f"{os.path.join(utils.BODY_POSE_DIR, 'meta_bodypose_mapping.json')} must contain ints as keys."
 
     # Get correct bodypose data
-    body_pose_name = [v for v in os.listdir(args.data_meta) if v.lower().endswith(".mov") or v.lower().endswith(".mp4")]
-
+    body_pose_name = [v for v in os.listdir(args.data) if v.lower().endswith(".mov") or v.lower().endswith(".mp4")]
     if len(body_pose_name) == 0:
         print(f"Tried to get bodypose name from {args.data_meta} but found no corresponding video file.")
     elif len(body_pose_name) > 1:
         print(f"Found multiple video files in {args.data_meta}. Using {body_pose_name[0].rsplit('.')[0]} as bodypose data.")
 
     body_pose_name = body_pose_name[0].rsplit('.')[0]
-    args.data_bodypose = os.path.join(args.data_bodypose, f"{body_pose_name}.json")
-    
+    args.PROCESSED_BODYPOSE_PATH = os.path.join(args.PROCESSED_BODYPOSE_PATH, f"{body_pose_name}.json")
+
     # Process data
-    process_data(args.data_meta, args.data_bodypose, args.output_dir, args.delta, args.postprocess)
+    process_data(args)
 
 if __name__ == "__main__":
     main()

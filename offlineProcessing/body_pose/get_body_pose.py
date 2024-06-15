@@ -2,9 +2,7 @@
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-import datetime
 import json
-from PIL import Image
 
 # Ignore warnings
 import warnings
@@ -16,23 +14,21 @@ from body_pose.visualisation import draw_landmarks_on_image
 import cv2
 
 from tqdm import tqdm
-import argparse
 import os
 
 from utils import *
-from utils.tools.setup_folder_structure import _create_necessary_folders_bodypose
 
 
 class BodyPose():
-    def __init__(self, media_path, model_path, output_folder, visualise=False, debugg=False, landmarks:str="landmark"):
+    def __init__(self, media_path, model_path, output_folder, debug=False, landmarks:str="landmark"):
         
         assert landmarks.lower() in ["landmark", "normalized_landmark"], "Invalid landmark type. Choose either 'landmark' or 'normalized_landmark'"
         
         self.media_path = media_path
         self.model_path = model_path
         self.output_folder = output_folder
-        self.visualise = visualise
-        self.DEBUGG = debugg
+        self.visualise = debug
+        self.DEBUG = debug
         self.mode = self._set_mode()
 
         self.filename = os.path.basename(self.media_path).split(".")[0]
@@ -48,7 +44,7 @@ class BodyPose():
     def _set_paths(self):
 
         self.output_path = os.path.join(self.output_folder, "raw", self.filename + ".json") # Output path for landmarks
-        self.debugg_output_path = os.path.join(self.output_folder, "debugg", "landmarks", self.filename + "_landmarks.json") # Output path for debugg landmarks
+        self.debug_output_path = os.path.join(self.output_folder, "debug", "landmarks", self.filename + "_landmarks.json") # Output path for debug landmarks
 
         ending = ".jpg" if self.mode == "image" else ".mov"
         self.visualisation_output_path = os.path.join(self.output_folder, "media", self.filename + "_ann" + ending) # Output path for visualisation
@@ -105,7 +101,7 @@ class BodyPose():
             with open(self.output_path, 'w') as f:
                 json.dump(landmarks_dict, f, indent=4)
 
-            if self.DEBUGG:
+            if self.DEBUG:
                 self._save_debug_landmarks(results)
             
             if self.visualise:
@@ -113,8 +109,8 @@ class BodyPose():
 
     def get_body_pose_from_video(self, target_fps):
 
-        if self.DEBUGG:
-            print("Debugging not supported for videos")
+        if self.DEBUG:
+            print("\n Warning: Full debugging not supported for videos \n")
 
         # Load video
         video = cv2.VideoCapture(self.media_path)
@@ -220,8 +216,8 @@ class BodyPose():
             "pose_landmarks": [{'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence': lm.presence} for lm in results.pose_landmarks[0]],
             "pose_world_landmarks": [{'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence': lm.presence} for lm in results.pose_world_landmarks[0]]}
         
-        print(f'Saving landmarks to {self.debugg_output_path}')
-        with open(self.debugg_output_path, 'w') as file:
+        print(f'Saving landmarks to {self.debug_output_path}')
+        with open(self.debug_output_path, 'w') as file:
             json.dump(results_dict, file, indent=4)
 
     def _visualise_results(self, image, results):
@@ -252,24 +248,6 @@ class BodyPose():
         else:
             raise ValueError(f"Unsupported mode: {self.mode}")
 
-def _create_necessary_folders(output_path, debugg=False):
-        # Function to create folder if it doesn't exist
-        def ensure_folder(path):
-            if not os.path.exists(path):
-                os.makedirs(path)
-
-        # Ensure the base output path exists
-        ensure_folder(output_path)
-
-        # Create subdirectories
-        subdirectories = ["media", "raw"]
-        if debugg:
-            subdirectories.append("debugg")
-            subdirectories.append("debugg/landmarks")
-
-        for subdir in subdirectories:
-            ensure_folder(os.path.join(output_path, subdir))   
-
 
 def process_data(args):
     if os.path.isdir(args.data):
@@ -292,26 +270,5 @@ def process_data(args):
     
     # Process images
     for d in data:
-        body_pose = BodyPose(d, args.model, args.output, args.visualise, args.debugg)
-        body_pose._process_data(args.set_fps)
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-d", "--data", type=str, help="Path to image, video or stream data folder")
-    parser.add_argument("-out", "--output", type=str, default=os.path.join(OUTPUT_DIR, 'body_pose'), help="Path to save output")
-    parser.add_argument("-m", "--mode", type=str, default="Video", help="Generate pose from [Image, Video, Stream]")
-    parser.add_argument("--model", type=str, default=os.path.join(MODELS_DIR, "pose_landmarker_heavy.task"), help="Path to model")
-    parser.add_argument("-v", "--visualise", action="store_true", help="Visualise results")
-    parser.add_argument("-sf", "--set_fps", type=int, default=0, help="Set fps for video processing, 0 for original fps")
-    parser.add_argument("--debugg", action="store_true", help="Debug mode")
-    args = parser.parse_args()
-
-    if args.mode.lower() not in ["image", "video"]:
-        raise ValueError(f"{args.mode} not supported. Video and Stream to be implemented")
-
-    _create_necessary_folders_bodypose(args.output, args.debugg)
-
-    process_data(args)
-
-if __name__ == "__main__":
-    main()
+        body_pose = BodyPose(d, args.model, args.BODYPOSE_OUTPUT_PATH, args.debug)
+        body_pose._process_data(args.fps)
