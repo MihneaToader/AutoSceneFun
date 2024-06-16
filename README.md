@@ -4,10 +4,10 @@ The objective of this project is to optimise the dataset creation process for 3D
 
 ![Project Overview](docs/Bedroom%201%20Walkaround.webp)
 
-Online Phase
+**Online Phase**
 * Capture indoor environments using iPhone LiDAR and Meta Quest 3 mesh extraction
 
-Offline Phase:
+**Offline Phase**
 * Employ a speech-to-text model for efficient transcription of interaction labels.
 * Utilise Google's [Pose Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker) body pose estimation model for posture tracking.
 
