@@ -86,6 +86,7 @@ Place the model(s) into the `offlineProcessing/models` folder
 
 </details>
 
+</details>
 
 ### :bar_chart: Data
 
@@ -103,6 +104,8 @@ The data must adhere to specific naming conventions:
 * **Videos**: `.mp4`, `.mov` (predominantly using `.mov`)
 * **Meta Quest Recordings**: `.json`
 * **Room Mesh and Texture**: `.obj`
+
+</details>
 
 ### :raised_hands: Hand Pose Mapping
 
