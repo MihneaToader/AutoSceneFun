@@ -2,7 +2,7 @@
 
 The objective of this project is to optimise the dataset creation process for 3D indoor environments, with a particular focus on the [SceneFun3D](https://scenefun3d.github.io) dataset. Our approach is divided into two main phases: online and offline processing. 
 
-![Project Overview](docs/Bedroom%201%20Walkaround.gif)
+![Project Overview](docs/Bedroom%201%20Walkaround.webp)
 
 Online Phase
 * Capture indoor environments using iPhone LiDAR and Meta Quest 3 mesh extraction
