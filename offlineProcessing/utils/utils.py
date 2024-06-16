@@ -1,5 +1,8 @@
 from time import time
 import os
+import platform
+
+OPERATING_SYSTEM = platform.system()
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
