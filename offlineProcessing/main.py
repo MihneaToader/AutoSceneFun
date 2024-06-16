@@ -46,12 +46,16 @@ def parse_args():
 
     known_args, _ = parser.parse_known_args()
 
+    assert known_args.fps > 0, "FPS must be greater than 0"
+    if known_args.fps < 10:
+        print("Warning: FPS really low, risks creating data lag.")
+
 
     if known_args.no_preprocess and known_args.preprocessed_data is None:
         parser.error("--no_preprocess requires --preprocessed_data path/to/preprocessed/data/folder")
 
     if known_args.model is None:
-        known_args.model = os.path.join(utils.MODELS_DIR, "pose_landmarker_lite.task")
+        known_args.model = os.path.join(utils.MODELS_DIR, "pose_landmarker_heavy.task")
 
     if known_args.no_postprocess and known_args.visualise:
         print("Cannot visualise data without postprocessing. Enabeling postprocessing...")
@@ -115,12 +119,7 @@ def main():
 
         # Visualise data
         cmd_visualise_data = f"python '{os.path.join(utils.PYVIZ_DIR, 'examples', 'time_data.py')}' --data '{args.VISUALISATION}'"
-        try:
-            subprocess.run(cmd_visualise_data, shell=True, capture_output=True, text=True)
-        except Exception as e:
-            print(f"An error occurred: {e}")
-            print("Visualisation only works with postprocessed data")
-
+        os.system(cmd_visualise_data)
 
 
 if __name__ == '__main__':
