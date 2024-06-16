@@ -1,8 +1,0 @@
-numpy
-pandas
-tqdm
-mediapipe
-tz
-python-dateutil
-pyviz3d
-open3d

@@ -48,34 +48,32 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Create virtual environment (if not already created)
-if [ ! -d ".3dv" ]; then
-    echo "Creating virtual environment..."
-    python3 -m venv .3dv
+# Create conda environment (if not already created)
+if ! conda env list | grep -q '3dv'; then
+    echo "Creating conda environment..."
+    conda env create -f environment.yml
     if [ $? -ne 0 ]; then
-        echo "Failed to create virtual environment. Exiting."
-        echo "Tip: Make sure python is available, i.e. activate conda base environment"
+        echo "Failed to create conda environment. Exiting."
+        echo "Tip: Make sure conda is available and the environment.yml file is correctly configured."
         exit 1
     fi
 else
-    echo "Virtual environment already exists."
+    echo "Conda environment already exists."
 fi
 
-# Activate the virtual environment
-echo "Activating virtual environment..."
-source .3dv/bin/activate
+# Activate the conda environment
+echo "Activating conda environment..."
+source activate 3dv
 if [ $? -ne 0 ]; then
-    echo "Failed to activate virtual environment. Exiting."
+    echo "Failed to activate conda environment. Exiting."
     exit 1
 fi
 
-# Install dependencies from requirements.txt
-echo "Installing Python dependencies..."
-pip install --upgrade pip
-# python -m pip install mediapipe
-pip install -r requirements.txt
+# Install open3d
+echo "Installing open3d..."
+conda install open3d -y
 if [ $? -ne 0 ]; then
-    echo "Failed to install dependencies. Exiting."
+    echo "Failed to install open3d. Exiting."
     exit 1
 fi
 
@@ -105,4 +103,4 @@ fi
 
 echo "Download completed."
 
-echo "Setup completed. Use 'source .3dv/bin/activate' to activate virtual environment."
+echo "Setup completed. Use 'conda activate 3dv' to activate virtual environment."

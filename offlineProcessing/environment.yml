@@ -8,6 +8,7 @@ dependencies:
   - tqdm
   - pandas
   - numpy
+  # - open3d
   - pip:
     - mediapipe
     - pyviz3d

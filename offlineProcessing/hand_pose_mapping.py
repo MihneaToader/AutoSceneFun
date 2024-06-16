@@ -15,7 +15,7 @@ from body_pose.sync_hand_poses import main as sync_hand_poses
 def parse_args():
     parser = argparse.ArgumentParser(description='Offline Processing of Logging Files from Meta Quest')
     parser.add_argument('-n', '--session_name', type=str, default=str(int(t.time())),
-                        help='Name of the session, Default is the current time in seconds')
+                        help='Name of the session. Default is the current time in seconds')
     parser.add_argument('-d', '--data', type=str, required=True,
                         help='Path to data folder with videos')
     parser.add_argument("-npre","--no_preprocess", action="store_true",
@@ -55,6 +55,7 @@ def parse_args():
         parser.error("--no_preprocess requires --preprocessed_data path/to/preprocessed/data/folder")
 
     if known_args.model is None:
+        
         known_args.model = os.path.join(utils.MODELS_DIR, "pose_landmarker_heavy.task")
 
     if known_args.no_postprocess and known_args.visualise:

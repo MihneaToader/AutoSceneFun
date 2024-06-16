@@ -1,5 +1,24 @@
-# AutoSceneFun
-## Setup instructions for development
+# Human-Scene Interactions by Observing Hand Poses with Meta Quest 3
+
+The objective of this project is to optimise the dataset creation process for 3D indoor environments, with a particular focus on the [SceneFun3D](https://scenefun3d.github.io) dataset. Our approach is divided into two main phases: online and offline processing. 
+
+Online Phase
+* Capture indoor environments using iPhone LiDAR and Meta Quest 3 mesh extraction
+
+Offline Phase:
+* Employ a speech-to-text model for efficient transcription of interaction labels.
+* Utilise Google's [Pose Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker) body pose estimation model for posture tracking.
+
+Additionally, we enhance the [Pyviz3D](https://github.com/francisengelmann/PyViz3D) visualization pipeline to support time-series analysis.
+
+This repository is organized into two sections: online and offline. Detailed guides for environment setup and demonstrations are provided.
+
+## :goggles: Online Processing
+
+### Setup instructions for development
+
+<details>
+
 ### Prerequisite software
 [Unity 2022.3.23f1](https://unity.com/download)\
 [Meta Quest Developer Hub](https://developer.oculus.com/meta-quest-developer-hub/)\
@@ -19,44 +38,109 @@ to download the necessary submodules.
 ### File structure
 For the sake of privacy, room scans are not included in this repository. Access polybox and download the needed scans from the `data` folder. Unpack the contents of the archive in the Assets\Scans folder and you're ready to use them.
 
-## Building and running
+
+### Building and running
 If you've done everything right, you should be able to open the Unity project, wait for Unity Hub to download all the necessary packages, go to File > Build Settings, set the build target to the Oculus 3 device and hit Build and Run. 
 
-## :dancer: Body-Pose Estimation
+</details>
+
+## Offline Processing
+
+### :gear: Setup
+
 <details>
 
-### Setup
-
 ***Disclaimer***: Streaming is not supported
+
+Navigate to the offlineProcessing folder `cd offlineProcessing`
+
+*MacOS* and *Linux*
 
 Run the setup-file to setup the environment with the necessary dependencies and download models.
 
 ```
 bash setup.sh
 ```
-Add the ```--model``` flagg if only a specific model is needed (lite, full or heavy)
-Example:
+
+#### Additional Useful Flags
+
+* `--model` : only download a specific model. Valid options: 'lite', 'full', or 'heavy'
+
+#### Manual Setup
+
+<details>
+
+Run
 ```
-bash setup.sh --model lite
+conda env create -f environment.yml
+conda activate 3dv
+conda install open3d
 ```
 
-Use ```source .3dv/bin/activate``` to activate the created virtual environment.
+Download the desired body pose estimation network:
+* [Lite](https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task)
+* [Full](https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task)
+* [Heavy](https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task)
 
-### Data
-Put your data into `data` folder. For images, `.jpg` is the supported format. For videos, both `.mp4` and `.mov` are supported. No need for dividing folders.
+Place the model(s) into the `offlineProcessing/models` folder
 
-### Body_pose.py
+</details>
 
-Default runs video-processing and saves results in the `output` folder (will be created if not present)
 
-* `--mode` : Generate pose from [Image, Video, Stream] (by default: Video)
-* `--model` : Path to model (by default: models/pose_landmarker_lite.task)
-* `--data` : Path to image or video data folder (by default: data) (will process only single file, if path to single file is given)
-* `--visualise` : Output visualisation of joints to output folder
-* `--output` : Path to output folder (by default: output). Folder will be created if does not exist
-* `--set_fps` : Set output fps for data.
+### :bar_chart: Data
 
-The output is sorted by timestamps. A video of `fps` will only be evaluated at `--set_fps`, i.e. a 60 fps video will only generate `--set_fps` datapoints for each second.
+<details>
+
+For each recording, create a new folder within the `data` directory. An example scene can be found [here](https://polybox.ethz.ch/index.php/s/4XrXz0gl9Ev5C8Q). Please move this example to `data/example`.
+
+The data must adhere to specific naming conventions:
+* Camera positions must include `camera` and `position` in the name.
+* Left-hand recordings must include `left` and `hand` in the name.
+* Right-hand recordings must include `right` and `hand` in the name.
+
+#### Supported Formats
+* **Images**: `.jpg`
+* **Videos**: `.mp4`, `.mov` (predominantly using `.mov`)
+* **Meta Quest Recordings**: `.json`
+* **Room Mesh and Texture**: `.obj`
+
+### :raised_hands: Hand Pose Mapping
+
+<details>
+
+Utilize `hand_pose_mapping.py` to map body pose recordings to recorded Meta Quest hand poses.
+
+*Disclaimer*: Running the visualization requires adding the PyVis path to the system path. When running the code for the first time, a warning will appear, providing the necessary command to execute.
+
+### Instructions
+
+1. **Run the entire pipeline of body pose extraction, mapping, and visualization**:
+    ```
+    python hand_pose_mapping.py -d path/to/data/folder --visualise
+    ```
+
+2. **Run the pipeline without video processing** (i.e., work with already processed video and visualize):
+    ```
+    python hand_pose_mapping.py -d path/to/data/folder --visualise -npre --preprocessed_data path/to/already/processed/data
+    ```
+
+3. **Run the pipeline without postprocessing** (does not convert data back into Unity format; postprocessing is required for visualization):
+    ```
+    python hand_pose_mapping.py -d path/to/data/folder -npost
+    ```
+
+#### Additional Useful Flags
+
+* `--session_name`: Specifies the name of the output session. The default is the current time in seconds.
+* `--mode`: Determines the input type for generating body poses, either from an image or video. Default: Video.
+* `--fps`: Synchronizes all data to the specified frames per second (see disclaimer below).
+* `--model`: Selects the Pose Landmarker model by providing the relative path.
+* `--debug`: Enables debug mode, which outputs all landmarks and the provided media file with annotations (media file output only works for photos).
+* `--delta`: Sets the time difference threshold in milliseconds for body pose hand mapping.
+
+*FPS*: Data is synchronized based on the timestamps from the Meta Quest (usually lower than the video fps). If the fps is lower than the provided Quest frames, this may result in data lag.
+
+</details>
 
 ### Output formats
 
@@ -65,3 +149,9 @@ The output is sorted by timestamps. A video of `fps` will only be evaluated at `
 * ***Landmarks***: .json
 
 </details>
+
+## Contributors
+
+- [Axel Wagner](https://github.com/Axel2017)
+- [Max Kieffer](https://github.com/mkiefferus)
+- [Mihnea Toader](https://github.com/MihneaToader)
