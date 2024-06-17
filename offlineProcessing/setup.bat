@@ -47,7 +47,7 @@ goto :parse_args
 conda env list | findstr /i /c:"3dv" >nul
 if %errorlevel% neq 0 (
     echo Creating conda environment...
-    conda env create -f environment.yml
+    conda env create -f windows_environment.yml
     conda env list
     if not %errorlevel% == 0 (
         echo Failed to create conda environment. Exiting.
