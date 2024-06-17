@@ -6,73 +6,8 @@ import numpy as np
 
 # Local modules
 import utils
-# from utils.tools.setup_folder_structure import _create_necessary_folders_sync_hand_poses
-from body_pose.postprocess_meta_files import process_folder as post_process_data
-
-# NOTE: exclude rotations in format_meta_data to speed up the code if needed
-
-
-def _format_meta_data(data, l_r_c="left") -> json:
-    """
-    (Helper function) Bring data in compatible format for further processing
-    NOTE: Edit funciton as MetaQuest-data changes in format
-    """
-
-    assert l_r_c in ["left", "right", "camera"], "Invalid 'l_r_c'. Choose 'left', 'right' or 'camera'."
-
-    # Adjust timestamps (convert to unix timestamp)
-    for t in data:
-        base_str = t['Timestamp'][:t['Timestamp'].rfind(':')]
-        millies = t['Timestamp'][t['Timestamp'].rfind(':')+1:]
-        
-        base_int = datetime.strptime(base_str, "%Y-%m-%d %H:%M:%S")
-        
-        # Assemble unix timestamp
-        unix = base_int.replace(tzinfo=tz.tzlocal()).timestamp() + int(millies) / 1000
-
-        data[data.index(t)]["Timestamp"] = unix
-
-    # Position map for renaming
-    position_map = {
-        "PositionX": "x", "PositionY": "y", "PositionZ": "z",
-        "RotationW": "rw", "RotationX": "rx", "RotationY": "ry", "RotationZ": "rz"
-    }
-
-    new_dataset = {}
-
-    if l_r_c in ['left', 'right']:
-        # Joints map for renaming
-        with open(os.path.join(utils.BODY_POSE_DIR, "hand_mapping.json"), 'r') as file:
-            joints_mapping = json.load(file)
-            
-        # Rename joints and axis labels
-        for t in data:
-            new_joints = {}
-            joints = t['Position_rotation']
-            
-            for joint, values in joints.items():
-                # Rename axis labels
-                new_values = {position_map.get(key, key): value for key, value in values.items()}
-                
-                # Rename joint and assign the new values
-                new_joints[f"{l_r_c}_{joints_mapping.get(joint, joint)}"] = new_values
-
-            # Save data to new dataset
-            new_dataset[float(t['Timestamp'])] = new_joints
-
-    elif l_r_c == 'camera':
-        for t in data:
-            new_head = {}
-            head = t['Position_rotation']
-            
-            for values in head.values():
-                # Rename axis labels
-                new_head = {position_map.get(key, key): value for key, value in values.items()}
-
-            # Save data to new dataset
-            new_dataset[float(t['Timestamp'])] = {"head":new_head}
-
-    return new_dataset
+from body_pose.convert_file_formats import post_process_folder as post_process_data
+from body_pose.convert_file_formats import pre_process_meta_data as _format_meta_data
 
 
 def _merge_n_datasets(delta_ms, *datasets):
@@ -135,11 +70,13 @@ def prepare_points_for_transformation(data_bodypose, data_meta, tr="translation"
     points_meta = []
 
     if tr == "translation":
+
+        # NOTE: DESELECT TO INCLUDE HANDS IN TRANSLATION
         # meta_right_hand = []
         # body_right_hand = []
         # meta_left_hand = []
         # body_left_hand = []
-        
+
         # for index, body_part in META_BODY_MAPPING.items():
         #     if index in data_bodypose and body_part in data_meta:
         #         if "left" in body_part:
@@ -159,11 +96,6 @@ def prepare_points_for_transformation(data_bodypose, data_meta, tr="translation"
             points_meta.append([data_meta['head']['x'], data_meta['head']['y'], data_meta['head']['z']])
     
     elif tr == "rotation":
-        # for index, body_part in META_BODY_MAPPING.items():
-        #     if index in data_bodypose and body_part in data_meta:
-        #         points_bodypose.append([data_bodypose[index]['x'], data_bodypose[index]['y'], data_bodypose[index]['z']])
-        #         points_meta.append([data_meta[body_part]['x'], data_meta[body_part]['y'], data_meta[body_part]['z']])
-
         meta_right_hand = []
         body_right_hand = []
         meta_left_hand = []
@@ -183,9 +115,10 @@ def prepare_points_for_transformation(data_bodypose, data_meta, tr="translation"
         points_meta.append(np.mean(meta_left_hand, axis=0))
         points_meta.append(np.mean(meta_right_hand, axis=0))
 
-        if 'head' in data_bodypose and 'head' in data_meta:
-            points_bodypose.append([data_bodypose['head']['x'], data_bodypose['head']['y'], data_bodypose['head']['z']])
-            points_meta.append([data_meta['head']['x'], data_meta['head']['y'], data_meta['head']['z']])
+        # NOTE: DESELECT TO INCLUDE HEAD IN ROTATION
+        # if 'head' in data_bodypose and 'head' in data_meta:
+        #     points_bodypose.append([data_bodypose['head']['x'], data_bodypose['head']['y'], data_bodypose['head']['z']])
+        #     points_meta.append([data_meta['head']['x'], data_meta['head']['y'], data_meta['head']['z']])
     
     return np.array(points_meta), np.array(points_bodypose)
 
@@ -388,38 +321,6 @@ def align_data(data1, data2, delta_ms):
     return new_data1, new_data2, t_diff
 
 
-# def kabsch_scaling(points_metaquest, points_bodypose):
-#     """
-#     Calculates the optimal rotation matrix and scaling factor to align two sets of points.
-    
-#     :param points_metaquest: Nx3 numpy array of points (simple data).
-#     :param points_bodypose: Nx3 numpy array of corresponding points (detailed data).
-#     :return: Tuple containing the rotation matrix, scaling factor, and translation vector.
-#     """
-
-#     # print(f"Shape points_metaquest: {points_metaquest.shape}, shape points_bodypose: {points_bodypose.shape}")
-#     # Step 1: Translate points to their centroids
-#     centroid_meta = np.mean(points_metaquest, axis=0)
-#     centroid_body = np.mean(points_bodypose, axis=0)
-#     points_meta_centered = points_metaquest - centroid_meta
-#     points_body_centered = points_bodypose - centroid_body
-    
-#     # Step 2: Compute the covariance matrix
-#     H = np.dot(points_body_centered.T, points_meta_centered)
-
-#     U, S, Vt = np.linalg.svd(H) # Singular Value Decomposition
-
-#     R = np.dot(Vt.T, U.T)
-
-#     # special reflection case
-#     if np.linalg.det(R) < 0:
-#         Vt[2, :] *= -1
-#         R = np.dot(Vt.T, U.T)
-
-#     t = centroid_meta - np.dot(R, centroid_body)
-
-#     return R, t
-
 def kabsch_scaling(points_metaquest, points_bodypose, get):
     """
     Calculates the optimal rotation matrix (around X and Z axes) and translation vector to align two sets of points.
@@ -433,9 +334,6 @@ def kabsch_scaling(points_metaquest, points_bodypose, get):
 
     centroid_meta = np.mean(points_metaquest, axis=0)
     centroid_body = np.mean(points_bodypose, axis=0)
-
-    if get == "translation":
-        return centroid_meta - centroid_body
 
     points_meta_centered = points_metaquest - centroid_meta
     points_body_centered = points_bodypose - centroid_body
@@ -471,9 +369,15 @@ def kabsch_scaling(points_metaquest, points_bodypose, get):
     dist2 = np.linalg.norm(points_meta_centered - transformed_bodypose2)
 
     if dist1 < dist2:
-        return Ry1
+        Ry = Ry1
     else:
-        return Ry2
+        Ry = Ry2
+
+    if get == "translation":
+        return centroid_meta - np.dot(Ry, centroid_body)
+        # return centroid_meta - centroid_body
+    
+    return Ry
 
 
 def transform_points(points:np.array, R, t):
