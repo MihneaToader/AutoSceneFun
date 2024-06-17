@@ -64,12 +64,20 @@ Run the setup-file to setup the environment with the necessary dependencies and 
 bash setup.sh
 ```
 
+*Windows*
+
+Run the setup-file to setup the environment with the necessary dependencies and download models.
+
+Run the bat file twice as conda create exits the first time eventhough running correctly 
+```
+setup.bat
+```
 #### Additional Useful Flags
 
 * `--model` : only download a specific model. Valid options: 'lite', 'full', or 'heavy'
 
 #### Manual Setup
-
+*MacOS* and  *Linux*
 <details>
 
 Run
@@ -77,6 +85,26 @@ Run
 conda env create -f environment.yml
 conda activate 3dv
 conda install open3d
+python -m pip install git+https://github.com/m-bain/whisperx.git
+```
+
+Download the desired body pose estimation network:
+* [Lite](https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task)
+* [Full](https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task)
+* [Heavy](https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task)
+
+Place the model(s) into the `offlineProcessing/models` folder
+
+</details>
+
+*Windows*
+<details>
+
+Run
+```
+conda env create -f windows_environment.yml
+conda activate 3dv
+python -m pip install git+https://github.com/m-bain/whisperx.git
 ```
 
 Download the desired body pose estimation network:
