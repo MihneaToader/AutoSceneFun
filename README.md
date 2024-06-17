@@ -130,7 +130,7 @@ Place the model(s) into the `offlineProcessing/models` folder
 
 <details>
 
-For each recording, create a new folder within the `data` directory. An example scene can be found [here](https://polybox.ethz.ch/index.php/s/4XrXz0gl9Ev5C8Q). Please move this example to `data/example`.
+For each recording, create a new folder within the `data` directory. An example scene can be found [here](https://polybox.ethz.ch/index.php/s/4XrXz0gl9Ev5C8Q). Please move this example to `data/example`. The folder has to be moved not copied as copying changes the folder creation time.
 
 The data must adhere to specific naming conventions:
 * Camera positions must include `camera` and `position` in the name.
