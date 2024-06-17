@@ -44,6 +44,7 @@ Additionally, in the Oculus App, in the Beta tab of the Settings, toggle "Develo
 
 ### File structure
 For the sake of privacy, room scans are not included in this repository. SCan can be made with [3DScanner app](https://3dscannerapp.com/) an iPhone app which allows capturing LiDAR scans. Place the scan in the Assets\Scans folder and you're ready to use them. Click on the SampleScene in the Scenes folder. Now replace the textured_output in the scene view with your scan. Take the default element of the scan in the scene view and drag it to AlignementRecorder-> Aligned Object element and NewMeshAlignment->Source Mesh Object element.
+**Make sure that your scan prefab has read/write enabled else unity will not be able to accesse the scan and perform transformations!**
 
 ### Building and running
 If you've done everything right, you should be able to go to File > Build Settings,set platform to Android and set the build target to the Oculus 3 device and hit Build and Run. 
