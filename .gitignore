@@ -63,6 +63,10 @@ ExportedObj/
 *.VC.db
 
 # Unity3D generated meta files
+unity/Assets/**/*.meta
+
+# Ignore all .asset files in the Assets folder
+unity/Assets/**/*.asset
 *.pidb.meta
 *.pdb.meta
 *.mdb.meta
