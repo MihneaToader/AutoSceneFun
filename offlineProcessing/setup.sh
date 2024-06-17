@@ -101,6 +101,8 @@ if [ "$DOWNLOAD_HEAVY" = true ]; then
     curl -O https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task
 fi
 
+python -m pip install git+https://github.com/m-bain/whisperx.git
+
 echo "Download completed."
 
 echo "Setup completed. Use 'conda activate 3dv' to activate virtual environment."

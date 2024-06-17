@@ -8,6 +8,7 @@ from utils.tools.move_folders import copy_contents
 from utils.tools.setup_folder_structure import _create_folder_structure
 from body_pose.get_body_pose import process_data as get_body_pose
 from body_pose.sync_hand_poses import main as sync_hand_poses
+from audio_transcribe.transcribe import main as transcribe
 
 
 # TODO: Change LITE model to HEAVY model
@@ -40,6 +41,20 @@ def parse_args():
     # Sync Hand Poses Arguments
     parser.add_argument("--delta", type=int, default=50,
                         help="Time difference threshold in milliseconds.")
+    # Transcription mode
+    parser.add_argument(
+        "--keyword_transcribe_mode", 
+        action="store_true", 
+        help="Will transcribe audio based on start and stop keywords"
+    )
+
+    # Start and stop keywords
+    parser.add_argument(
+        "--audio_transcribe_keyword", 
+        nargs=2, 
+        default=["start", "stop"], 
+        help="Keywords to start and stop transcription, default is 'start' and 'stop'. Is only used if --keyword_transcribe_mode is used."
+    )
     
     
     args = parser.parse_args()
@@ -98,6 +113,9 @@ def main():
         # Get body pose
         get_body_pose(args)
 
+        transcribe(args)
+
+
     # Synchronise body pose and hand pose
     args.HAND_POSE_OUTPUT_PATH = os.path.join(args.OUTPUT_PATH, "hand_mapping_raw")
     args.PROCESSED_BODYPOSE_PATH = os.path.join(args.BODYPOSE_OUTPUT_PATH, "raw")
@@ -114,7 +132,7 @@ def main():
         args.VISUALISATION = os.path.join(args.OUTPUT_PATH, "visualisation")
 
         # Move data to correct folders
-        include_files = ['audio_text.json', 'iPhoneMesh.json', 'roomMesh.obj', 'textured_output.obj']
+        include_files = ['iPhoneMesh.json', 'roomMesh.obj', 'textured_output.obj']
         copy_contents(args.data, args.VISUALISATION, include_files)
         copy_contents(args.HAND_POSE_OUTPUT_PATH, args.VISUALISATION)
 

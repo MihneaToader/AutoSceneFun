@@ -47,7 +47,7 @@ goto :parse_args
 conda env list | findstr /i /c:"3dv" >nul
 if %errorlevel% neq 0 (
     echo Creating conda environment...
-    conda env create -f environment.yml
+    conda env create -f windows_environment.yml
     conda env list
     if not %errorlevel% == 0 (
         echo Failed to create conda environment. Exiting.
@@ -84,6 +84,8 @@ if "%DOWNLOAD_HEAVY%"=="true" (
     echo Downloading Pose landmarker heavy...
     curl -O https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task
 )
+call conda activate 3dv
+python -m pip install git+https://github.com/m-bain/whisperx.git
 
 echo Download completed.
 
