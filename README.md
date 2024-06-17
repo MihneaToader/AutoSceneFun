@@ -178,6 +178,8 @@ Utilize `hand_pose_mapping.py` to map body pose recordings to recorded Meta Ques
 * `--model`: Selects the Pose Landmarker model by providing the relative path.
 * `--debug`: Enables debug mode, which outputs all landmarks and the provided media file with annotations (media file output only works for photos).
 * `--delta`: Sets the time difference threshold in milliseconds for body pose hand mapping.
+* `--audio_transcribe_keyword`:If used will use keyword transcription. 
+* `--keyword_transcribe_mode`:If --audio_transcribe_keyword is used sets the start and stop keywords.
 
 *FPS*: Data is synchronized based on the timestamps from the Meta Quest (usually lower than the video fps). If the fps is lower than the provided Quest frames, this may result in data lag.
 
