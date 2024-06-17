@@ -53,7 +53,7 @@ class BodyPose():
     def _set_mode(self):
         if self.media_path.lower().endswith(".jpg"):
             mode = "image"
-        elif self.media_path.lower().endswith(".mov") or self.data.lower().endswith(".mp4"):
+        elif self.media_path.lower().endswith(".mov") or self.media_path.lower().endswith(".mp4"):
             mode = "video"
         else:
             raise ValueError("Unsupported media type")
@@ -108,6 +108,7 @@ class BodyPose():
                 self._visualise_results(image, results)
 
     def get_body_pose_from_video(self, target_fps):
+        print(f"Processing video: {self.media_path}")
 
         if self.DEBUG:
             print("\n Warning: Full debugging not supported for videos \n")
@@ -129,10 +130,8 @@ class BodyPose():
         skip_ratio = max(1, int(fps / target_fps))
         fps = int(fps / skip_ratio)
         frame_count = 0
-
         # Create a tqdm progress bar
         total_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT)) // skip_ratio
-        progress_bar = tqdm(total=total_frames, desc="Processing Video Frames")
 
         # Define the codec and create VideoWriter object
         if self.visualise:
@@ -142,7 +141,7 @@ class BodyPose():
         pose_data = {"landmark_type": self.landmark_type}
 
         try:
-             # Create PoseLandmarker object
+            # Create PoseLandmarker object
             with vision.PoseLandmarker.create_from_options(options) as landmarker:
                 
                 # Iterate over each video frame
@@ -153,9 +152,6 @@ class BodyPose():
                     
                     # Skip frames if necessary
                     if frame_count % skip_ratio == 0:
-
-                        # Update the progress bar
-                        progress_bar.update(1)
 
                         # Convert BGR to RGB
                         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -199,9 +195,10 @@ class BodyPose():
                             out.write(bgr_annotated_image)
 
                     frame_count += 1
+        except:
+            print("Error")
 
         finally:
-            progress_bar.close()
             video.release()
             if self.visualise:
                 print("Saving video to: ", self.visualisation_output_path)
@@ -211,7 +208,6 @@ class BodyPose():
                 json.dump(pose_data, f, indent=4)
 
     def _save_debug_landmarks(self, results):
-
         results_dict = {
             "pose_landmarks": [{'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence': lm.presence} for lm in results.pose_landmarks[0]],
             "pose_world_landmarks": [{'x': lm.x, 'y': lm.y, 'z': lm.z, 'visibility': lm.visibility, 'presence': lm.presence} for lm in results.pose_world_landmarks[0]]}
@@ -237,7 +233,11 @@ class BodyPose():
             timestamp = os.stat(data_path).st_birthtime
             return timestamp
         except Exception as e:
-            print(f"Warning: Cannot read metadata from {data_path}.")
+            try :
+                timestamp = os.stat(data_path).st_ctime 
+                return timestamp
+            except:
+                print(f"Warning: Cannot read metadata from {data_path}.")
             return None
 
     def _process_data(self, set_fps=0):

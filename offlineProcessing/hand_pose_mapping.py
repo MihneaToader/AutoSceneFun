@@ -119,9 +119,19 @@ def main():
         copy_contents(args.HAND_POSE_OUTPUT_PATH, args.VISUALISATION)
 
         # Visualise data
-        cmd_visualise_data = f"python '{os.path.join(utils.PYVIZ_DIR, 'examples', 'time_data.py')}' --data '{args.VISUALISATION}'"
-        os.system(cmd_visualise_data)
+        script_path = os.path.join(utils.PYVIZ_DIR, 'examples', 'time_data.py')
 
+        # Construct the command to execute
+        if utils.OPERATING_SYSTEM == 'Windows':
+            cmd_visualise_data = f"python \"{script_path}\" --data \"{args.VISUALISATION}\""
+        else:
+            cmd_visualise_data = f"python '{script_path}' --data '{args.VISUALISATION}'"
+
+        # Execute the command using subprocess
+        try:
+            subprocess.run(cmd_visualise_data, shell=True, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"An error occurred: {e}")
 
 if __name__ == '__main__':
     main()

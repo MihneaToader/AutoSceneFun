@@ -1,0 +1,13 @@
+name: 3dv
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9.6
+  - pip
+  - tqdm
+  - pandas
+  - numpy
+  - pip:
+    - mediapipe
+    - open3d
