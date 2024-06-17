@@ -84,6 +84,8 @@ if "%DOWNLOAD_HEAVY%"=="true" (
     echo Downloading Pose landmarker heavy...
     curl -O https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task
 )
+call conda activate 3dv
+python -m pip install git+https://github.com/m-bain/whisperx.git
 
 echo Download completed.
 
