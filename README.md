@@ -50,6 +50,7 @@ For the sake of privacy, room scans are not included in this repository. Scans c
 If you've done everything right, you should be able to go to File > Build Settings,set platform to Android and set the build target to the Oculus 3 device and hit Build and Run. 
 
 ### Recording data
+If the scan does not aligne correctly changing the Y rotation of the camera rig in Unity should help.
 The app starts to aligne the scan and then will transition to passtrough and hand, head data and audio will be recorded. Once the app is exited all datasets are saved with timestamp and identifier names. Using the SideQuest app the recorded data can be found in Android/data/app_name/files.
 
 </details>
