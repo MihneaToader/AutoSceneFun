@@ -43,10 +43,13 @@ For a visual guide, follow Black Whale Studio's [Get Started with Meta Quest Dev
 Additionally, in the Oculus App, in the Beta tab of the Settings, toggle "Developer Runtime Features" and then enable Passthrough, Point Cloud and Spatial Data. For ease of development, try to setup the Oculus Link if you're using Windows. It allows for quick debugging without having to build every time. Open the unity folder as a new Unity project.
 
 ### File structure
-For the sake of privacy, room scans are not included in this repository. SCan can be made with 3DScanner app an iPhone app which allows capturing LiDAR scans. Place the scan in the Assets\Scans folder and you're ready to use them. Click on the SampleScene in the Scenes folder. Now replace the textured_output in the scene view with your scan.
+For the sake of privacy, room scans are not included in this repository. SCan can be made with [3DScanner app](https://3dscannerapp.com/) an iPhone app which allows capturing LiDAR scans. Place the scan in the Assets\Scans folder and you're ready to use them. Click on the SampleScene in the Scenes folder. Now replace the textured_output in the scene view with your scan. Take the default element of the scan in the scene view and drag it to AlignementRecorder-> Aligned Object element and NewMeshAlignment->Source Mesh Object element.
 
 ### Building and running
-If you've done everything right, you should be able to open the Unity project, wait for Unity Hub to download all the necessary packages, go to File > Build Settings, set the build target to the Oculus 3 device and hit Build and Run. 
+If you've done everything right, you should be able to go to File > Build Settings,set platform to Android and set the build target to the Oculus 3 device and hit Build and Run. 
+
+### Recording data
+The app starts to aligne the scan and then will transition to passtrough and hand, head data and audio will be recorded. Once the app is exited all datasets are saved with timestamp and identifier names. Using the SideQuest app the recorded data can be found in Android/data/app_name/files.
 
 </details>
 
